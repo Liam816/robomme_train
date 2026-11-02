@@ -5,6 +5,7 @@ which can be 5-10x faster than LeRobot dataloader and can avoid memory explosion
 
 import jax
 import logging
+from pathlib import Path
 from omegaconf import DictConfig
 from openpi.models import model as _model
 from openpi.training.data_loader import DataLoader, TorchDataLoader,transform_dataset
@@ -47,7 +48,12 @@ def create_data_loader(
     
     history_config = get_history_config(history_config)
 
-    dataset = RoboMMEDataset(
+    dataset_class = RoboMMEDataset
+    if (Path(dataset_path) / "meta/lerobot_framesamp.json").is_file():
+        from mme_vla_suite.training.lerobot_framesamp import LeRobotFrameSampDataset
+        dataset_class = LeRobotFrameSampDataset
+
+    dataset = dataset_class(
         dataset_path=dataset_path,
         data_config=data_config, 
         history_config=history_config, 

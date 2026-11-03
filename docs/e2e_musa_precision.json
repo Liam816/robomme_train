@@ -1,0 +1,28 @@
+{
+  "scope": "controlled linear condition objective; production dimensions, real 41-frame history",
+  "coefficient_norm": 1.0,
+  "cases": {
+    "2e-08_fp16": {
+      "jax_scorer_grad_norm": 0.0,
+      "loss": 9.95866230368847e-07,
+      "musa_scorer_grad_norm": 0.0,
+      "musa_loss": 9.958652071873075e-07
+    },
+    "2e-08_fp32_diagnostic": {
+      "jax_scorer_grad_norm": 9.727433731535774e-09,
+      "loss": 9.95866230368847e-07
+    },
+    "0.03_fp16": {
+      "jax_scorer_grad_norm": 0.014578491937607558,
+      "loss": 1.4938005208969116,
+      "musa_scorer_grad_norm": 0.014578444114681522,
+      "musa_loss": 1.4937965869903564
+    },
+    "0.03_fp32_diagnostic": {
+      "jax_scorer_grad_norm": 0.01459114665237031,
+      "loss": 1.4938005208969116
+    }
+  },
+  "passed": true,
+  "conclusion": "Original FP16 selection gradients can underflow with tiny reader output weights; a nonzero scorer gradient is not a valid first-three-warmup-step gate. Original FP16 experiment is preserved."
+}

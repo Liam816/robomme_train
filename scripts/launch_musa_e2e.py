@@ -36,6 +36,11 @@ def main():
     for name in ["numerical_cpu_validation.json", "e2e_validation_cpu.json", "e2e_validation_musa.json", "production_validation.json"]:
         if not load(name).get("passed"):
             raise RuntimeError("Validation has not passed: " + name)
+    if not load('precision_diagnostic.json').get('passed'):
+        raise RuntimeError('Original production FP16 warmup behavior must be checked')
+    for name in ['e2e_validation_cpu.json','e2e_validation_musa.json']:
+        if load(name)['controlled_optimizer']['scorer_parameter_delta_l2']<=0:
+            raise RuntimeError('Controlled E2E scorer update validation failed')
     if not load("production_validation.json")["sample"]["overflow_exercised"]:
         raise RuntimeError("Production validation must exercise real evictions")
     if load("assets/export_complete.json")["memory_config"]["stage"] != "e2e":
@@ -74,9 +79,9 @@ def main():
         result = json.loads((folder / preflight / "status.json").read_text())
         if result["stage"] != "complete" or not result["checkpoint_reload_fixed_input_identical"] or not result["frozen_hashes_unchanged"]:
             raise RuntimeError("Four-card preflight/checkpoint validation failed")
-        if not any(x.get("scorer_grad_norm", 0) > 0 for x in result["records"][1:]):
-            raise RuntimeError("The scorer received no action FM gradient")
-        update(preflight_result=result, train_status=str(folder / args.run_name / "status.json"))
+        update(preflight_result=result, train_status=str(folder / args.run_name / "status.json"),
+               precision_diagnostic=str(root/'precision_diagnostic.json'),
+               warmup_note='Original zero reader initialization and FP16 storage preserved; initial scorer gradients can be zero.')
         # Begin the full experiment from the requested fresh official-base seed.
         run("training", ["--steps", "80000", "--run-name", args.run_name], logs / "train.log")
         update(stage="complete", finished_at=time.time())

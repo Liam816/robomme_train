@@ -24,3 +24,4 @@ toolz==1.2.0
 tqdm-loggable==0.4.1
 typeguard==4.6.0
 tyro==0.9.35
+ml-collections==1.0.0

@@ -11,6 +11,7 @@ from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 import yaml
 from mme_vla_suite.musa.model import PercMemPi05Torch
 from mme_vla_suite.musa.prepare_assets import load_tree
+from mme_vla_suite.musa.runtime import load_profile
 from mme_vla_suite.musa.data import TrainingDataset,GlobalBatchSampler,collate,global_random,prepare_batch,validate_global_sampler
 
 def atomic(path,value):
@@ -39,16 +40,21 @@ def lr_at(profile,step):
     lr=profile["learning_rate"];warmup=lr["warmup_steps"];initial=lr["value"]/(warmup+1)
     return initial+(lr["value"]-initial)*min(step/warmup,1.0)
 def exact_grad_norm(model,device,clip):
-    squares=torch.zeros((),device=device,dtype=torch.float32)
-    for p in model.parameters():
-        if p.requires_grad and p.grad is not None:squares+=p.grad.float().square().sum()
+    squares=torch.zeros((4,),device=device,dtype=torch.float32)
+    for name,p in model.named_parameters():
+        if p.requires_grad and p.grad is not None:
+            value=p.grad.float().square().sum()
+            squares[0]+=value
+            if '.memory.scorer.' in name:squares[1]+=value
+            if 'memory.mem_reader__' in name:squares[2]+=value
+            if 'memory.mem_feature_adapter__' in name:squares[3]+=value
     dist.all_reduce(squares,op=dist.ReduceOp.SUM)
-    norm=squares.sqrt()
+    norms=squares.sqrt();norm=norms[0]
     if not torch.isfinite(norm):raise FloatingPointError("Non-finite gradient norm")
     if norm>clip:
         for p in model.parameters():
             if p.requires_grad and p.grad is not None:p.grad.div_(norm/clip)
-    return float(norm.detach().cpu())
+    return [float(x) for x in norms.detach().cpu()]
 def save_checkpoint(model,optimizer,ema,path,step,profile,frozen_hashes):
     rank=dist.get_rank()
     if rank==0:path.mkdir(parents=True,exist_ok=False)
@@ -91,11 +97,11 @@ def restore_local(model,optimizer,ema,path):
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument("--config",type=Path,required=True)
-    parser.add_argument("--steps",type=int,default=3)
+    parser.add_argument("--steps",type=int)
     parser.add_argument("--run-name")
     parser.add_argument("--resume-from",type=Path)
     args=parser.parse_args()
-    profile=yaml.safe_load(args.config.read_text());check_profile(profile)
+    profile=load_profile(args.config);check_profile(profile)
     rank=int(os.environ["LOCAL_RANK"])
     allowed=os.sched_getaffinity(0)
     affinity=sorted(set(map(int,os.environ["ROBOMME_CPU_POOL"].split(",")))&allowed) if os.environ.get("ROBOMME_CPU_POOL") else sorted(allowed)
@@ -112,7 +118,7 @@ def main():
     if not validation.get("passed"):raise RuntimeError("Numerical migration validation must pass")
     validation=json.loads((root/"production_validation.json").read_text())
     if not validation.get("passed"):raise RuntimeError("Production-size numerical/vision checks must pass")
-    if args.steps<1:raise ValueError("At least one optimizer update is required")
+    if args.steps is not None and args.steps<1:raise ValueError("At least one optimizer update is required")
     if args.resume_from:
         if not (args.resume_from/"complete.json").exists():raise ValueError("Checkpoint is incomplete")
         saved_meta=json.loads((args.resume_from/"metadata.json").read_text())
@@ -130,6 +136,10 @@ def main():
     base=load_tree(profile["musa"]["base_export"],verify=(rank==0))
     memory=load_tree(profile["musa"]["memory_initial"])
     meta=json.loads((root/"assets/export_complete.json").read_text())
+    is_e2e=meta["memory_config"]["stage"]=="e2e"
+    if is_e2e:
+        if profile['model']['history_config']!='perceptual-learned-adarms-v1-e2e.yaml':raise ValueError('E2E profile required')
+        if not json.loads((root/'e2e_validation_cpu.json').read_text()).get('passed'):raise ValueError('E2E forward/gradient validation required')
     native=json.loads((Path(profile["data"]["dataset_path"])/"meta/native_complete.json").read_text())
     if native["vision_id"]!=meta["vision_id"]:raise ValueError("Native cache and current frozen vision weights differ")
     model=PercMemPi05Torch(base,memory,meta["memory_config"])
@@ -137,14 +147,15 @@ def main():
     trainable=sum(p.numel() for p in model.parameters() if p.requires_grad)
     total=sum(p.numel() for p in model.parameters())
     if total!=meta["base_parameters"]+meta["memory_parameters"]:raise ValueError("Port changed the model parameter count")
-    if trainable!=total-meta["vision_parameters"]-meta["scorer_parameters"]:raise ValueError("Port changed the freeze partition")
+    if trainable!=total-meta["vision_parameters"]-(0 if is_e2e else meta["scorer_parameters"]):raise ValueError("Port changed the freeze partition")
     model.to(device)
     frozen={}
     if rank==0:
-        frozen={"vision":module_hash(model.vision),"scorer":module_hash(model.memory.scorer)}
+        frozen={"vision":module_hash(model.vision)}
+        if not is_e2e:frozen['scorer']=module_hash(model.memory.scorer)
         if frozen["vision"]!=meta["vision_id"]:raise ValueError("Backbone/cache vision identity mismatch")
         if args.resume_from and frozen!=saved_meta["frozen_hashes"]:raise ValueError("Resume frozen weights differ from checkpoint")
-    ignored=[model.vision,model.memory.scorer]
+    ignored=[model.vision] if is_e2e else [model.vision,model.memory.scorer]
     for i,block in enumerate(model.blocks):
         model.blocks[i]=FSDP(block,device_id=device,use_orig_params=True)
     model=FSDP(model,device_id=device,use_orig_params=True,ignored_modules=ignored)
@@ -153,8 +164,10 @@ def main():
           eps=profile["optimizer"]["eps"],weight_decay=profile["optimizer"]["weight_decay"],foreach=False)
     ema={n:p.detach().clone() for n,p in model.named_parameters() if p.requires_grad}
     start_step=restore_local(model,optimizer,ema,args.resume_from) if args.resume_from else 0
+    if args.steps is None:args.steps=profile['train']['num_train_steps']-start_step
     if start_step+args.steps>profile["train"]["num_train_steps"]:raise ValueError("Update budget exceeds the original training schedule")
     selected={n:p.detach().clone() for n,p in model.named_parameters() if p.requires_grad and "mem_reader__output_final__" in n}
+    scorer_initial={n:p.detach().clone() for n,p in model.named_parameters() if p.requires_grad and '.memory.scorer.' in n} if is_e2e else {}
     dataset=TrainingDataset(profile)
     micro=profile["musa"]["micro_batch_size"];accum=profile["musa"]["gradient_accumulation_steps"]
     sampler=GlobalBatchSampler(len(dataset),rank,4,64,micro,profile["train"]["seed"],start_step=start_step)
@@ -180,29 +193,34 @@ def main():
                 if not torch.isfinite(loss):raise FloatingPointError("Non-finite loss")
                 (loss/accum).backward()
             loss_total+=loss.detach()/accum
-        grad_norm=exact_grad_norm(model,device,profile["optimizer"]["clip_gradient_norm"])
+        grad_norm,scorer_grad,reader_grad,feature_grad=exact_grad_norm(model,device,profile["optimizer"]["clip_gradient_norm"])
         optimizer.step()
         with torch.no_grad():
             decay=profile["train"]["ema_decay"]
             for name,p in model.named_parameters():
                 if p.requires_grad:ema[name].mul_(decay).add_(p.detach(),alpha=1-decay)
         dist.all_reduce(loss_total);loss_total/=4
-        delta=torch.zeros((),device=device)
+        delta=torch.zeros((2,),device=device)
         for n,p in model.named_parameters():
-            if n in selected:delta+=(p.detach()-selected[n]).square().sum()
+            if n in selected:delta[0]+=(p.detach()-selected[n]).square().sum()
+            if n in scorer_initial:delta[1]+=(p.detach()-scorer_initial[n]).square().sum()
         dist.all_reduce(delta)
         record={"step":step+1,"loss":float(loss_total.cpu()),"grad_norm":grad_norm,"learning_rate":lr,
-                "reader_final_parameter_delta_l2":float(delta.sqrt().cpu()),"seconds":time.monotonic()-started}
+                "reader_final_parameter_delta_l2":float(delta[0].sqrt().cpu()),"seconds":time.monotonic()-started}
+        if is_e2e:record.update(scorer_grad_norm=scorer_grad,reader_grad_norm=reader_grad,feature_adapter_grad_norm=feature_grad,
+                              scorer_parameter_delta_l2=float(delta[1].sqrt().cpu()))
         records.append(record)
         if rank==0:
             print(json.dumps(record),flush=True)
-            atomic(run/"status.json",{"stage":"training","steps":step+1,"total_parameters":total,
-                   "trainable_parameters":trainable,"records":records,"physical_gpus":[4,5,6,7]})
+            with (run/'metrics.jsonl').open('a') as log:log.write(json.dumps(record)+'\n')
+            atomic(run/"status.json",{"stage":"training","steps":step+1,"target_steps":start_step+args.steps,"total_parameters":total,
+                   "trainable_parameters":trainable,"records":records[-20:],"physical_gpus":[4,5,6,7]})
         # Match the upstream zero-based save trigger. Directory names count
         # completed optimizer updates, preventing an off-by-one resume schedule.
         if step>start_step and step%profile["train"]["save_interval"]==0 and step+1<start_step+args.steps:
             save_checkpoint(model,optimizer,ema,run/f"step_{step+1:06d}",step+1,profile,frozen)
     if records[-1]["reader_final_parameter_delta_l2"]<=0:raise AssertionError("Reader output parameters did not update")
+    if is_e2e and args.steps>=3 and not any(r['scorer_grad_norm']>0 for r in records[1:]):raise AssertionError('E2E scorer received no flow-matching gradient')
     model.eval()
     with torch.no_grad():reference_loss=model(batch,draw,flow).detach().clone()
     end_step=start_step+args.steps
@@ -215,9 +233,10 @@ def main():
     with torch.no_grad():restored_loss=model(batch,draw,flow).detach()
     if not torch.equal(reference_loss,restored_loss):raise AssertionError("Checkpoint reload changed fixed-input loss")
     if rank==0:
-        after={"vision":module_hash(model.module.vision),"scorer":module_hash(model.module.memory.scorer)}
+        after={"vision":module_hash(model.module.vision)}
+        if not is_e2e:after['scorer']=module_hash(model.module.memory.scorer)
         if frozen!=after:raise AssertionError("Frozen weights changed")
-        result={"stage":"complete","steps":end_step,"invocation_updates":args.steps,"start_step":start_step,"records":records,"checkpoint":str(checkpoint_path),
+        result={"stage":"complete","steps":end_step,"invocation_updates":args.steps,"start_step":start_step,"records":records[-20:],"checkpoint":str(checkpoint_path),
                 "checkpoint_reload_fixed_input_identical":True,"frozen_hashes_unchanged":True,
                 "total_parameters":total,"trainable_parameters":trainable,"physical_gpus":[4,5,6,7],
                 "global_batch":64,"micro_batch_per_rank":micro,"accumulation":accum}

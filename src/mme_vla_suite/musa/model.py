@@ -141,7 +141,12 @@ class GemmaBlock(Tree):
 class Memory(Tree):
     def __init__(self,arrays,cfg):
         super().__init__({k:v for k,v in arrays.items() if not k.startswith("mem_scorer/")})
-        self.scorer=Tree({k.removeprefix("mem_scorer/"):v for k,v in arrays.items() if k.startswith("mem_scorer/")},trainable=False)
+        scorer_arrays={k.removeprefix("mem_scorer/"):v for k,v in arrays.items() if k.startswith("mem_scorer/")}
+        if cfg["stage"]=="e2e":
+            from mme_vla_suite.musa.e2e import E2EScorer
+            self.scorer=E2EScorer(scorer_arrays,cfg)
+        else:
+            self.scorer=Tree(scorer_arrays,trainable=False)
         self.cfg=cfg
     def attention(self,q,m,valid,path,heads):
         b,nq,dim=q.shape; dh=dim//heads
@@ -154,7 +159,14 @@ class Memory(Tree):
         return self.linear(z,path+"/out"),weights
     def forward(self,native,ticks,valid,now,return_attention=False):
         c=self.cfg;b,n=native.shape[:2]
+        if c["stage"]=="e2e":
+            valid=valid & (ticks<=now[:,None])
+            native=torch.where(valid[...,None,None],native,0)
         projected=self.linear(native.float(),"mem_feature_adapter").to(torch.float16)
+        if c["stage"]=="e2e":
+            from mme_vla_suite.musa.e2e import replay_memory
+            projected,ticks,valid,_=replay_memory(self.scorer,projected,ticks,valid,now,c)
+            n=projected.shape[1]
         m=pool_tokens(projected,c["read_grid"])
         root="mem_reader/"
         m=self.ln(self.linear(self.ln(m,root+"input_norm"),root+"proj"),root+"proj_norm")
@@ -187,8 +199,8 @@ class PercMemPi05Torch(nn.Module):
     def __init__(self,base,memory,cfg):
         super().__init__()
         self.cfg=cfg
-        if cfg["stage"]!="teacher" or cfg["input_space"]!="native" or cfg["memory_mode"]!="normal":
-            raise ValueError("This backend implements the requested P0 native full-history teacher profile")
+        if cfg["stage"] not in {"teacher","e2e"} or cfg["input_space"]!="native" or cfg["memory_mode"]!="normal":
+            raise ValueError("This backend implements native P0 teacher and E2E learned memory profiles")
         flat=flatten(base)
         vision={k.removeprefix("PaliGemma/img/"):v for k,v in flat.items() if k.startswith("PaliGemma/img/")}
         self.vision=Vision(vision)

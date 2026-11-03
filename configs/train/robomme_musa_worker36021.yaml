@@ -1,0 +1,21 @@
+# Host-only overlay. Model, loss, optimizer, seed and 80k budget remain in b4432b1's profile.
+runtime:
+  openpi_data_home: /data/heping/robomme_musa/assets
+  compilation_cache_dir: /data/heping/robomme_musa/e2e/jax_cpu_cache
+data:
+  dataset_path: /data/heping/robomme_musa/data/percmem_cache
+  norm_assets_dir: /data/heping/robomme_musa/assets/norm/mme_vla_suite
+weights:
+  params_path: /data/heping/robomme_musa/assets/pi05_base/params
+train:
+  assets_base_dir: /data/heping/robomme_musa/e2e/runs/assets
+  checkpoint_base_dir: /data/heping/robomme_musa/e2e/runs/ckpts/mme_vla_suite
+musa:
+  root: /data/heping/robomme_musa/e2e
+  base_export: /data/heping/robomme_musa/assets/base_export
+  memory_initial: /data/heping/robomme_musa/e2e/assets/memory_initial
+  backend: mccl
+  micro_batch_size: 2
+  gradient_accumulation_steps: 8
+  activation_checkpointing: true
+  jax_preprocessing: cpu

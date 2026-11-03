@@ -13,6 +13,7 @@ import torch,torch_musa
 import yaml
 from mme_vla_suite.musa.model import PercMemPi05Torch,Vision,pool_tokens
 from mme_vla_suite.musa.prepare_assets import load_tree
+from mme_vla_suite.musa.runtime import load_profile
 from mme_vla_suite.musa.data import TrainingDataset,collate,prepare_batch,global_random,validate_global_sampler
 from mme_vla_suite.training.lerobot_framesamp import VideoReader
 from mme_vla_suite.models.integration.history_pi0 import HistoryPi0Config
@@ -22,8 +23,8 @@ from openpi.models.model import Observation,preprocess_observation
 from openpi.shared.image_tools import resize_with_pad
 import openpi.shared.array_typing as at
 
-ROOT=Path("/data/heping/robomme_musa")
-REPO=ROOT/"repo"
+ROOT=Path(os.environ.get("ROBOMME_MUSA_ROOT","/data/heping/robomme_musa"))
+REPO=Path(os.environ.get("ROBOMME_MUSA_REPO",str(Path(__file__).resolve().parents[3])))
 os.chdir(REPO)
 predict_reference=nnx.jit(lambda module,observation,noisy,flow_t:module.predict_velocity(observation,noisy,flow_t))
 report={"checked_at":datetime.now(ZoneInfo("Asia/Shanghai")).isoformat(),"physical_gpu":4}
@@ -52,12 +53,13 @@ def main():
     torch.backends.mudnn.allow_tf32=False
     torch.backends.musa.matmul.allow_tf32=False
     torch.musa.set_device(0);device=torch.device("musa",0)
-    profile=yaml.safe_load((REPO/"configs/train/robomme_percmem_v1_teacher_musa.yaml").read_text())
-    base=load_tree(ROOT/"assets/base_export",verify=True)
-    memory=load_tree(ROOT/"assets/memory_initial",verify=True)
+    profile=load_profile()
+    base=load_tree(profile['musa']['base_export'],verify=True)
+    memory=load_tree(profile['musa']['memory_initial'],verify=True)
     metadata=json.loads((ROOT/"assets/export_complete.json").read_text())
-    source=json.loads((ROOT/"data/percmem_cache/meta/source_index.json").read_text())
-    episode=source["episodes"][0]
+    cache=Path(profile['data']['dataset_path'])
+    source=json.loads((cache/"meta/source_index.json").read_text())
+    episode=next(e for e in source['episodes'] if e['length']>=401)
     reader=VideoReader(source)
     frames=[image for i,image in enumerate(reader.frames(episode,count=21)) if i in [0,10,20]]
     wrist=next(reader.frames(episode,"wrist_image",20,1))
@@ -77,17 +79,25 @@ def main():
     del original_encoder,encoder
     torch.musa.empty_cache()
     adapter=TrainingDataset(profile,require_complete=False)
-    row=episode["dataset_from_index"]+20
+    decision=400
+    row=episode["dataset_from_index"]+decision
+    front=next(reader.frames(episode,'image',decision,1))
+    wrist=next(reader.frames(episode,'wrist_image',decision,1))
     arrays=adapter.dataset.arrays
     action_rows=np.minimum(row+np.arange(20),episode["dataset_to_index"]-1)
-    feats=np.zeros((320,64,2048),np.float16);feats[:3]=actual_native
-    ticks=np.zeros(320,np.int32);ticks[:3]=[0,10,20]
-    mask=np.zeros(320,bool);mask[:3]=True
-    raw={"image":frames[-1],"wrist_image":wrist,"state":np.array(arrays["state"][row]),
+    plan=np.load(cache/f"keyframes/episode_{episode['episode_index']:06d}.npz")
+    available=np.searchsorted(plan['row'],decision,side='right')
+    assert available>32
+    native=np.load(cache/f"native/episode_{episode['episode_index']:06d}.npy",mmap_mode='r')
+    feats=np.zeros((320,64,2048),np.float16);feats[:available]=native[:available]
+    ticks=np.zeros(320,np.int32);ticks[:available]=plan['tick'][:available]
+    mask=np.zeros(320,bool);mask[:available]=True
+    report['sample']={'episode':episode['episode_index'],'decision':decision,'valid_history_frames':int(available),'overflow_exercised':True}
+    raw={"image":front,"wrist_image":wrist,"state":np.array(arrays["state"][row]),
          "actions":np.array(arrays["actions"][action_rows]),
          "prompt":source["tasks"][str(int(arrays["task_index"][row]))].lower(),
          "simple_subgoal":"","grounded_subgoal":"","perc_mem_feats":feats,
-         "perc_mem_frame_tick":ticks,"perc_mem_frame_mask":mask,"perc_mem_now_tick":np.int32(20)}
+         "perc_mem_frame_tick":ticks,"perc_mem_frame_mask":mask,"perc_mem_now_tick":np.int32(decision)}
     sample=adapter.transform_raw(raw)
     batch_numpy=collate([sample])
     keys,noise,times=global_random(42,0,64)
@@ -110,6 +120,19 @@ def main():
         with at.disable_typechecking():
             reference=config.load(combined)
             reference.eval()
+            if precision=='float32' and metadata['memory_config']['stage']=='e2e':
+                from mme_vla_suite.models.representation.perc_memory_e2e import replay_memory as reference_replay
+                from mme_vla_suite.musa.e2e import replay_memory as torch_replay
+                original_bank=reference_replay(reference.mem_scorer,reference.project_memory(obs.perc_mem_feats),
+                    obs.perc_mem_frame_tick,obs.perc_mem_frame_mask,obs.perc_mem_now_tick,reference.memory_cfg)
+                with torch.no_grad():
+                    projected=pt.memory.linear(batch['perc_mem_feats'].float(),'mem_feature_adapter').half()
+                    port_bank=torch_replay(pt.memory.scorer,projected,batch['perc_mem_frame_tick'],
+                        batch['perc_mem_frame_mask'],batch['perc_mem_now_tick'],metadata['memory_config'])
+                for index,name in [(1,'ticks'),(2,'mask'),(3,'ids')]:
+                    require('e2e_bank_'+name,{'passed':bool(np.array_equal(port_bank[index].cpu().numpy(),np.asarray(original_bank[index]))),
+                        'musa':port_bank[index].cpu().tolist(),'jax':np.asarray(original_bank[index]).tolist()})
+                require('e2e_bank_tokens',metrics(port_bank[0].cpu().float().numpy(),np.asarray(original_bank[0]),atol=.001,rtol=2e-4,cosine=.99999))
             expected=np.asarray(predict_reference(reference,obs,jnp.asarray(noisy),jnp.asarray(times[:1])))
         pt.compute_dtype=torch.float32 if precision=="float32" else torch.bfloat16
         with torch.no_grad():actual=pt.predict_velocity(batch,torch.from_numpy(noisy.copy()).to(device),flow).cpu().numpy()
@@ -148,7 +171,7 @@ def main():
     report["total_parameters"]=sum(p.numel() for p in pt.parameters())
     report["trainable_parameters"]=sum(p.numel() for p in pt.parameters() if p.requires_grad)
     assert report["total_parameters"]==metadata["base_parameters"]+metadata["memory_parameters"]
-    assert report["trainable_parameters"]==report["total_parameters"]-metadata["vision_parameters"]-metadata["scorer_parameters"]
+    assert report["trainable_parameters"]==report["total_parameters"]-metadata["vision_parameters"]-(0 if metadata['memory_config']['stage']=='e2e' else metadata["scorer_parameters"])
     report["passed"]=True
     reader.close();save();print(json.dumps(report,indent=2),flush=True)
 if __name__=="__main__":main()

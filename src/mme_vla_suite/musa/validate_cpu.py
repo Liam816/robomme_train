@@ -15,7 +15,7 @@ from mme_vla_suite.musa.train import lr_at
 
 torch.set_num_threads(4)
 torch.set_float32_matmul_precision("highest")
-ROOT=Path("/data/heping/robomme_musa")
+ROOT=Path(os.environ.get("ROBOMME_MUSA_ROOT","/data/heping/robomme_musa"))
 report={}
 def flat(tree): return traverse_util.flatten_dict(tree,sep="/")
 def compare(name,actual,expected,atol=2e-5,rtol=2e-4):

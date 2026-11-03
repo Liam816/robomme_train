@@ -23,8 +23,8 @@ from openpi.models.model import restore_params
 from openpi.shared import normalize
 
 ROOT=Path(os.environ.get("ROBOMME_MUSA_ROOT","/data/heping/robomme_musa"))
-REPO=ROOT/"repo"
-PROFILE=REPO/"configs/train/robomme_percmem_v1_teacher_musa.yaml"
+REPO=Path(os.environ.get("ROBOMME_MUSA_REPO", str(Path(__file__).resolve().parents[3])))
+PROFILE=Path(os.environ.get("ROBOMME_MUSA_CONFIG",str(REPO/"configs/train/robomme_percmem_v1_teacher_musa.yaml")))
 os.chdir(REPO)
 
 def save_tree(root,tree):

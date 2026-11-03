@@ -30,7 +30,8 @@ class PercMemPolicy(MME_VLA_Policy):
         self.next_key = 0
 
     def _score_candidates(self, candidates, now):
-        tokens = jnp.asarray(np.stack([f.tokens for f in candidates]))[None]
+        # Pool in FP32, matching both differentiable replay and offline P2 scoring.
+        tokens = jnp.asarray(np.stack([f.tokens for f in candidates]), jnp.float32)[None]
         ticks = jnp.array([[f.tick for f in candidates]], jnp.int32)
         valid = jnp.ones(ticks.shape, bool)
         is_new = jnp.arange(len(candidates))[None] == len(candidates) - 1

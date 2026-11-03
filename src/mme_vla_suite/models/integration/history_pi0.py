@@ -218,6 +218,8 @@ class HistoryPi0Config(Pi0Config):
             if cfg.stage == "student":
                 trainable = nnx_utils.PathRegex("(mem_reader/.*|mem_cond_adapter/.*|.*llm.*_1.*|time_mlp_.*|action_.*)")
                 return nnx.Not(trainable)
+            if cfg.stage == "e2e":
+                return nnx_utils.PathRegex(".*img.*")
             return nnx.Any(nnx_utils.PathRegex(".*img.*"), nnx_utils.PathRegex("mem_scorer/.*"))
         filters = []
         has_lora = False

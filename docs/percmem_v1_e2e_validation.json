@@ -1,0 +1,35 @@
+{
+  "verified_at": "2026-11-03T22:43:40+08:00",
+  "base_commit": "8c9c891c0e37e6b6eeeff18630436bc7ace5c1a3",
+  "branch": "codex/pi05-perc-mem-e2e",
+  "e2e_training_started": false,
+  "production_gpu_capacity_tested": false,
+  "tests": [
+    {
+      "scope": "E2E + original perceptual memory + FrameSamp regression",
+      "passed": 35,
+      "seconds": 101.498,
+      "log": "/tmp/percmem_e2e_all_tests.log"
+    },
+    {
+      "scope": "Final online scorer FP32 pooling regression",
+      "passed": 1,
+      "seconds": 1.647,
+      "log": "/tmp/percmem_e2e_online_precision_test.log"
+    }
+  ],
+  "gradient_verification": {
+    "actual_flow_matching_optimizer_steps": 3,
+    "scorer_gradient_zero_at_zero_reader_output_initialization": true,
+    "scorer_nonzero_gradient_and_weight_update_after_unlock": true,
+    "reader_weights_updated": true,
+    "vision_and_frozen_ema_unchanged": true,
+    "credit_to_first_overflow_without_history_truncation": true
+  },
+  "cpu_online_replay_hard_forward_and_reader_parity": true,
+  "same_seed_p0_e2e_initial_parameters_equal_on_tiny_model": true,
+  "production_parameter_structure_equal": true,
+  "new_neural_parameters": 0,
+  "new_trainable_parameters": 2571265,
+  "review_execution_blockers": []
+}

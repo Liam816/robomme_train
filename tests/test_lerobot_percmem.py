@@ -66,6 +66,14 @@ class DataTest(unittest.TestCase):
         self.assertEqual(item["perc_mem_feats"].dtype, np.float16)
         self.assertEqual(item["image"].shape, (16, 16, 3))
 
+    def test_e2e_replays_native_history_without_teacher_or_offline_banks(self):
+        cfg = dataclasses.replace(self.cfg, stage="e2e", evict="learned")
+        item = self.dataset(cfg)[0]
+        self.assertEqual(item["perc_mem_feats"].shape[0], cfg.max_frames)
+        self.assertEqual(item["perc_mem_feats"].shape[-1], cfg.native_dim)
+        self.assertNotIn("perc_teacher_feats", item)
+        self.assertEqual(int(item["perc_mem_frame_mask"].sum()), 1)
+
     def test_spawned_workers_reopen_mmaps_and_video(self):
         loader = torch.utils.data.DataLoader(self.dataset(), batch_size=None, num_workers=2,
                                              multiprocessing_context="spawn")

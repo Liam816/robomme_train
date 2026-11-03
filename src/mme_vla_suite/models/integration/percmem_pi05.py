@@ -23,7 +23,8 @@ _COND_KERNEL_INIT = nnx.initializers.xavier_uniform()
 
 def inputs_spec(base, action, history, batch_size):
     cfg = PercMemConfig.from_history(history)
-    n = cfg.max_frames if cfg.stage == "teacher" else cfg.capacity
+    replay = cfg.stage == "e2e" and cfg.input_space == "native"
+    n = cfg.max_frames if cfg.stage == "teacher" or replay else cfg.capacity
     dim = cfg.native_dim if cfg.input_space == "native" else cfg.feature_dim
     values = dict(
         perc_mem_feats=jax.ShapeDtypeStruct((batch_size, n, cfg.store_grid ** 2, dim), jnp.float16),
@@ -76,10 +77,19 @@ class PercMemPi05(HistoryPi0):
             feats, ticks, mask = (jnp.roll(x, 1, axis=0) for x in (feats, ticks, mask))
             # Keep donor ages while expressing them on the recipient clock: no future ticks.
             ticks = ticks + observation.perc_mem_now_tick[:, None] - jnp.roll(observation.perc_mem_now_tick, 1)[:, None]
+        if cfg.stage == "e2e":
+            mask = mask & (ticks <= observation.perc_mem_now_tick[:, None])
+            feats = jnp.where(mask[..., None, None], feats, 0)
         if cfg.input_space == "native":
             feats = self.project_memory(feats)
         elif feats.shape[-1] != cfg.feature_dim:
             raise ValueError("Projected memory has the wrong feature dimension")
+        if cfg.stage == "e2e" and cfg.input_space == "native":
+            from mme_vla_suite.models.representation.perc_memory_e2e import replay_memory
+            feats, ticks, mask, _ = replay_memory(
+                self.mem_scorer, feats, ticks, mask, observation.perc_mem_now_tick, cfg)
+        elif cfg.stage == "e2e" and feats.shape[1] > cfg.capacity:
+            raise ValueError("Projected E2E inference input must already be the bounded online bank")
         result = self.mem_reader(feats.astype(jnp.float32), ticks, mask, observation.perc_mem_now_tick,
                                  return_attention=return_attention)
         c_mem, attention = result if return_attention else (result, None)

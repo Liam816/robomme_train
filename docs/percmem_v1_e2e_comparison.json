@@ -1,0 +1,32 @@
+{
+  "verified_at": "2026-11-03T22:43:40+08:00",
+  "reference": "robomme_percmem_v1_teacher_repro.yaml",
+  "common_equal_leaf_fields": 69,
+  "changed": {
+    "expected_memory.perc_mem.stage": {
+      "p0": "teacher",
+      "e2e": "e2e"
+    },
+    "model.history_config": {
+      "p0": "perceptual-learned-adarms-v1-teacher.yaml",
+      "e2e": "perceptual-learned-adarms-v1-e2e.yaml"
+    },
+    "profile_name": {
+      "p0": "robomme_percmem_v1_teacher_repro",
+      "e2e": "robomme_percmem_v1_e2e_repro"
+    },
+    "runtime.compilation_cache_dir": {
+      "p0": "/mnt/cpfs/heping/projects/robomme_policy_learning/runs/jax_cache/percmem-v1-teacher-lerobot-s42",
+      "e2e": "/mnt/cpfs/heping/projects/robomme_policy_learning/runs/jax_cache/percmem-v1-e2e-lerobot-s42"
+    },
+    "train.exp_name": {
+      "p0": "percmem-v1-teacher-lerobot-s42",
+      "e2e": "percmem-v1-e2e-lerobot-s42"
+    }
+  },
+  "added": {
+    "expected_memory.perc_mem.e2e_temperature": 1.0
+  },
+  "removed": {},
+  "effective_difference": "Enable trainable learned eviction and W4+Q28 bounded memory; preserve backbone/data/initialization/reader/fusion/optimization budget."
+}

@@ -28,7 +28,7 @@ class PercMemWeightLoader:
 
     def load(self, reference):
         loaded = restore_params(self.params_path, restore_type=np.ndarray)
-        if self.stage == "teacher" and self.native_cache:
+        if self.stage in {"teacher", "e2e"} and self.native_cache:
             from mme_vla_suite.shared.percmem_io import canonical_vision_params
             cached = json.loads((Path(self.native_cache) / "meta/native_complete.json").read_text())
             if tree_hash(canonical_vision_params(loaded["PaliGemma"]["img"])) != cached["vision_id"]:
@@ -38,13 +38,15 @@ class PercMemWeightLoader:
         flat = traverse_util.flatten_dict(loaded)
         missing, extra = ref.keys() - flat.keys(), flat.keys() - ref.keys()
         allowed = {"mem_feature_adapter", "mem_reader", "mem_cond_adapter", "mem_scorer"}
-        illegal = [key for key in missing if self.stage != "teacher" or key[0] not in allowed]
+        if self.stage == "e2e" and any(key[0] in allowed for key in flat):
+            raise ValueError("E2E requires fresh memory initialization from pi05_base, not P0/P2 memory weights")
+        illegal = [key for key in missing if self.stage not in {"teacher", "e2e"} or key[0] not in allowed]
         if illegal or extra:
             raise ValueError(f"Checkpoint mismatch: missing={illegal}, unexpected={sorted(extra)}")
         for key in flat:
             if np.shape(flat[key]) != np.shape(ref[key]):
                 raise ValueError(f"Checkpoint shape mismatch at {key}")
-        logging.info("P0 explicitly initialized new memory leaves: %s", sorted(missing))
+        logging.info("%s explicitly initialized new memory leaves: %s", self.stage, sorted(missing))
         merged = {key: flat[key].astype(ref[key].dtype) if key in flat else ref[key] for key in ref}
         if self.stage == "student":
             if not self.scorer_path:
@@ -75,11 +77,14 @@ def build_config(profile):
     if not model.pi05 or memory.integration_type != "perc_adarms" or not model.use_history:
         raise ValueError("Expected the perceptual v1 pi0.5 integration")
     cfg = PercMemConfig.from_history(memory)
-    expected_freeze = "vision_only" if cfg.stage == "teacher" else "percmem_student"
+    expected_freeze = "vision_only" if cfg.stage in {"teacher", "e2e"} else "percmem_student"
     if profile["freeze"] != expected_freeze or "lora" in model.paligemma_variant or "lora" in model.action_expert_variant:
         raise ValueError("Profile stage and freeze policy disagree")
     if cfg.stage == "student" and (cfg.input_space != "projected" or not cfg.teacher_params):
         raise ValueError("Student requires the frozen projected feature space and P0 teacher")
+    if cfg.stage == "e2e" and (cfg.input_space != "native" or any(
+            [cfg.teacher_params, cfg.scorer_path, cfg.projected_dir, cfg.banks_dir])):
+        raise ValueError("E2E training replays native keyframes with current weights; P0/P2/P3 artifacts are forbidden")
     lr, data = profile["learning_rate"], profile["data"]
     if lr["schedule"] != "warmup_then_constant":
         raise ValueError("Expected the reference warmup-then-constant schedule")
@@ -136,7 +141,7 @@ def review_config(profile, config, memory):
     target = Path(profile["runtime"]["compilation_cache_dir"])
     if (link.is_symlink() and link.resolve() != target.resolve()) or (link.exists() and not link.is_symlink()):
         blockers.append(f"Unexpected compilation-cache binding: {link}")
-    n = cfg.max_frames if cfg.stage == "teacher" else cfg.capacity
+    n = cfg.max_frames if cfg.stage in {"teacher", "e2e"} else cfg.capacity
     dim = cfg.native_dim if cfg.input_space == "native" else cfg.feature_dim
     data_bytes = config.batch_size * n * cfg.store_grid ** 2 * dim * 2
     if cfg.stage == "student":
@@ -151,8 +156,13 @@ def review_config(profile, config, memory):
         checkpoint_dir=str(config.checkpoint_dir), checkpoint_ids=steps, checks=checks, execution_blockers=blockers,
         runtime=profile["runtime"], global_batch_size=config.batch_size, samples_per_device=config.batch_size // 4,
         input_memory_bytes_per_batch=data_bytes, capacity_tested=False,
-        freeze=("vision and unused scorer; VLM/action/reader/adapters trainable" if cfg.stage == "teacher" else
-                "only reader, output adapter and action expert/time/action projections trainable"),
+        freeze=({"teacher": "vision and unused scorer; VLM/action/reader/adapters trainable",
+                 "e2e": "vision only; VLM/action/scorer/reader/adapters trainable",
+                 "student": "only reader, output adapter and action expert/time/action projections trainable"}[cfg.stage]),
+        memory_training=({"selection": "hard_argmin_forward_softmax_ST_backward", "temperature": cfg.e2e_temperature,
+                          "reader_capacity_frames": cfg.capacity, "history_gradient": "full_unroll_no_truncation",
+                          "offline_bank_membership": False, "scorer_decision_dropout": False}
+                         if cfg.stage == "e2e" else None),
         compilation_cache_binding={"upstream_path": str(link), "symlink_target": str(target)},
         evaluation_plan=profile["evaluation"])
 

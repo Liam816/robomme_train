@@ -1,0 +1,88 @@
+{
+  "checked_at": "2026-11-03T17:33:45+08:00",
+  "stage": "P0 full-history teacher",
+  "training_started": true,
+  "training_process_alive": true,
+  "supervisor_pid": 2185454,
+  "training_pid": 2223168,
+  "base_commit": "827c86535fb3383488574ea683552454886fc344",
+  "branch": "codex/pi05-perc-mem-v1",
+  "profile": "configs/train/robomme_percmem_v1_teacher_repro.yaml",
+  "profile_sha256": "d7e4188f9fd60f4de05667f23a055f8534e9f7f0d4d95ac5dc423952d950fe48",
+  "physical_gpus": [
+    4,
+    5,
+    6,
+    7
+  ],
+  "global_batch_size": 64,
+  "fsdp_devices": 4,
+  "num_train_steps": 80000,
+  "cache_manifest": {
+    "format": "robomme_percmem_v1_fp16_8x8",
+    "index_signature": "498b700ccf183f14b369bd41c6b8c4b3054f9b2b3ffc263ae0dadbd1412a7e0b",
+    "source_info_sha256": "726d4a2d0d88b8328776c8fab59614a66a15aa276928048d06b26684a2fbffd1",
+    "source": "/mnt/cpfs/heping/data/public/robomme",
+    "fps": 10,
+    "clock_hz": 20,
+    "key_stride": 10,
+    "grid": 8,
+    "native_dim": 2048,
+    "storage": "float16",
+    "keyframes": 154381,
+    "max_keyframes": 283,
+    "episodes": 1600,
+    "total_frames": 768897,
+    "execution_samples": 476857,
+    "cache_id": "d64587a952aa43282a8a62d658363b759ceb849924a1858a464f3e5a10e3aef9"
+  },
+  "cache_identity": {
+    "cache_id": "d64587a952aa43282a8a62d658363b759ceb849924a1858a464f3e5a10e3aef9",
+    "vision_id": "b8fd85a150d6691cadc8f23c195a6407659687470843269a417f1e91da14c4d8"
+  },
+  "completed_iterations_at_check": 105,
+  "last_progress": "17:33:43.502 [I] Progress on: 105it/80.0kit rate:28.5s/it remaining:632:05:01 elapsed:44:26 postfix:- (2223168:tqdm_logging.py:154)",
+  "loss_logs": [
+    "Step 0: grad_norm=1.0569, llm_grad_norm=0.6565, loss=0.0935, param_norm=1809.7894",
+    "Step 100: grad_norm=0.5992, llm_grad_norm=0.3785, loss=0.0684, param_norm=1809.7893"
+  ],
+  "loss_aggregation": "Step 0 is the first batch; Step 100 averages steps 1 through 100.",
+  "gpu_status": "index, memory.total [MiB], memory.used [MiB], utilization.gpu [%]\n0, 46068 MiB, 41602 MiB, 99 %\n1, 46068 MiB, 41584 MiB, 100 %\n2, 46068 MiB, 41584 MiB, 100 %\n3, 46068 MiB, 41584 MiB, 100 %\n4, 46068 MiB, 41588 MiB, 100 %\n5, 46068 MiB, 41586 MiB, 100 %\n6, 46068 MiB, 41586 MiB, 100 %\n7, 46068 MiB, 41586 MiB, 100 %\n",
+  "current_attempt_errors": [],
+  "runtime_fixes": [
+    "Stable module-level adapter initializer identities across eval_shape and jitted initialization.",
+    "Keep shared frozen params/EMA outside the donated JIT tree; donate trainable state only."
+  ],
+  "cpu_precommit_tests": {
+    "exit_code": 0,
+    "seconds": 135.46,
+    "verified_at_utc": "2026-11-03T09:33:07+00:00",
+    "command": [
+      "/mnt/cpfs/heping/projects/robomme_policy_learning/.venv/bin/python",
+      "-m",
+      "unittest",
+      "test_percmem_v1",
+      "test_percmem_stages",
+      "test_lerobot_percmem",
+      "test_percmem_profiles",
+      "test_lerobot_framesamp",
+      "-v"
+    ],
+    "test_count": 27,
+    "log": "/tmp/percmem_precommit_tests.log"
+  },
+  "gpu_synthetic_regression": {
+    "steps": 3,
+    "passed": true,
+    "frozen_shared_leaves_verified": 56,
+    "not_production_losses": true
+  },
+  "log": "/mnt/cpfs/heping/projects/robomme_policy_learning_worktrees/perc_mem_v1_20261103/261103_train_mem_p0.log",
+  "checkpoint_dir": "/mnt/cpfs/heping/projects/robomme_policy_learning/runs/ckpts/mme_vla_suite/percmem-v1-teacher-lerobot-s42",
+  "not_yet_verified": [
+    "10000-step checkpoint",
+    "80000-step completion",
+    "real-data P1/P2/P3 experiments",
+    "closed-loop evaluation"
+  ]
+}

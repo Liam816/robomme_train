@@ -18,6 +18,15 @@ import openpi.shared.array_typing as at
 @at.typecheck
 @struct.dataclass
 class HistAugObservation(_Observation):
+    # Frame-structured v1 inputs, independent from the old token-wise Modul fields.
+    perc_mem_feats: at.Float[at.Array, "b mf mp md"] | None = None
+    perc_mem_frame_tick: at.Int[at.Array, "b mf"] | None = None
+    perc_mem_frame_mask: at.Bool[at.Array, "b mf"] | None = None
+    perc_mem_now_tick: at.Int[at.Array, " b"] | None = None
+    perc_teacher_feats: at.Float[at.Array, "b tf mp md"] | None = None
+    perc_teacher_tick: at.Int[at.Array, "b tf"] | None = None
+    perc_teacher_mask: at.Bool[at.Array, "b tf"] | None = None
+
     # for perceptual memory
     static_image_emb: at.Float[at.Array, "b l1 d1"] | None = None
     static_mask: at.Bool[at.Array, "b l1"] | None = None
@@ -46,6 +55,13 @@ class HistAugObservation(_Observation):
             tokenized_prompt_mask=parent_obs.tokenized_prompt_mask,
             token_ar_mask=parent_obs.token_ar_mask,
             token_loss_mask=parent_obs.token_loss_mask,
+            perc_mem_feats=data.get("perc_mem_feats", None),
+            perc_mem_frame_tick=data.get("perc_mem_frame_tick", None),
+            perc_mem_frame_mask=data.get("perc_mem_frame_mask", None),
+            perc_mem_now_tick=data.get("perc_mem_now_tick", None),
+            perc_teacher_feats=data.get("perc_teacher_feats", None),
+            perc_teacher_tick=data.get("perc_teacher_tick", None),
+            perc_teacher_mask=data.get("perc_teacher_mask", None),
             # MMEVLA fields
             static_image_emb=data.get("static_image_emb", None),
             static_mask=data.get("static_mask", None),
@@ -73,6 +89,13 @@ class HistAugObservation(_Observation):
         result["recur_state_emb"] = self.recur_state_emb
         result["symbolic_tokenized_prompt"] = self.symbolic_tokenized_prompt  #  subgoal
         result["symbolic_tokenized_prompt_mask"] = self.symbolic_tokenized_prompt_mask
+        result["perc_mem_feats"] = self.perc_mem_feats
+        result["perc_mem_frame_tick"] = self.perc_mem_frame_tick
+        result["perc_mem_frame_mask"] = self.perc_mem_frame_mask
+        result["perc_mem_now_tick"] = self.perc_mem_now_tick
+        result["perc_teacher_feats"] = self.perc_teacher_feats
+        result["perc_teacher_tick"] = self.perc_teacher_tick
+        result["perc_teacher_mask"] = self.perc_teacher_mask
         return result
 
     def to_base_obs(self) -> _Observation:
@@ -98,6 +121,13 @@ class HistAugObservation(_Observation):
         recur_mask: at.Bool[ArrayT, "*b t"] | None = None,
         recur_pos_emb: at.Float[ArrayT, "*b t v p d2"] | None = None,
         recur_state_emb: at.Float[ArrayT, "*b t d3"] | None = None,
+        perc_mem_feats=None,
+        perc_mem_frame_tick=None,
+        perc_mem_frame_mask=None,
+        perc_mem_now_tick=None,
+        perc_teacher_feats=None,
+        perc_teacher_tick=None,
+        perc_teacher_mask=None,
         symbolic_tokenized_prompt: at.Int[ArrayT, "*b l d5"] | None = None,
         symbolic_tokenized_prompt_mask: at.Bool[ArrayT, "*b l d6"] | None = None,
     ) -> "HistAugObservation":
@@ -109,6 +139,13 @@ class HistAugObservation(_Observation):
             tokenized_prompt_mask=base_obs.tokenized_prompt_mask,
             token_ar_mask=base_obs.token_ar_mask,
             token_loss_mask=base_obs.token_loss_mask,
+            perc_mem_feats=perc_mem_feats,
+            perc_mem_frame_tick=perc_mem_frame_tick,
+            perc_mem_frame_mask=perc_mem_frame_mask,
+            perc_mem_now_tick=perc_mem_now_tick,
+            perc_teacher_feats=perc_teacher_feats,
+            perc_teacher_tick=perc_teacher_tick,
+            perc_teacher_mask=perc_teacher_mask,
             static_image_emb=static_image_emb,
             static_mask=static_mask,
             static_pos_emb=static_pos_emb,
@@ -136,6 +173,13 @@ def preprocess_observation(
     )
     return HistAugObservation.from_base_obs(
         base_obs,
+        perc_mem_feats=observation.perc_mem_feats,
+        perc_mem_frame_tick=observation.perc_mem_frame_tick,
+        perc_mem_frame_mask=observation.perc_mem_frame_mask,
+        perc_mem_now_tick=observation.perc_mem_now_tick,
+        perc_teacher_feats=observation.perc_teacher_feats,
+        perc_teacher_tick=observation.perc_teacher_tick,
+        perc_teacher_mask=observation.perc_teacher_mask,
         static_image_emb=observation.static_image_emb,
         static_mask=observation.static_mask,
         static_pos_emb=observation.static_pos_emb,

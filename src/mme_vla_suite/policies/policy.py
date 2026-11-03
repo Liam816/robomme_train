@@ -75,7 +75,7 @@ class MME_VLA_Policy:
 
     @override
     def infer(self, obs: dict) -> dict:
-        if self.config is not None and self.config.representation_type != "symbolic":
+        if self.config is not None and self.config.representation_type != "symbolic" and self.config.integration_type != "perc_adarms":
             assert len(self.mem_buffer._history_feats) > 0, \
                 "history feats is empty, add buffer first"
                                         

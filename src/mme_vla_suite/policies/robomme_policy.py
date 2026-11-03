@@ -85,6 +85,9 @@ class RoboMMEInputs(transforms.DataTransformFn):
         if "prompt" in data:
             inputs["prompt"] = data["prompt"]
 
+        for key in ('perc_mem_feats','perc_mem_frame_tick','perc_mem_frame_mask','perc_mem_now_tick','perc_teacher_feats','perc_teacher_tick','perc_teacher_mask'):
+            if key in data:
+                inputs[key] = data[key]
         return inputs
 
 

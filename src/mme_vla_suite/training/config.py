@@ -362,6 +362,17 @@ class RoboMMEDataConfig(DataConfigFactory):
             ]
         )
 
+        history = get_history_config(model_config.history_config)
+        if history is not None and history.integration_type == "perc_adarms":
+            from mme_vla_suite.models.representation.perc_memory_v1 import PercMemConfig
+            cfg = PercMemConfig.from_history(history)
+            mapping = dict(repack_transform.inputs[0].structure)
+            names = ["perc_mem_feats", "perc_mem_frame_tick", "perc_mem_frame_mask", "perc_mem_now_tick"]
+            if cfg.stage == "student":
+                names += ["perc_teacher_feats", "perc_teacher_tick", "perc_teacher_mask"]
+            mapping.update({name: name for name in names})
+            repack_transform = _transforms.Group(inputs=[_transforms.RepackTransform(mapping)])
+
         data_transforms = _transforms.Group(
             inputs=[RoboMMEInputs(model_type=model_config.model_type)],
             outputs=[RoboMMEOutputs()],

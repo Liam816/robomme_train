@@ -49,7 +49,10 @@ def create_data_loader(
     history_config = get_history_config(history_config)
 
     dataset_class = RoboMMEDataset
-    if (Path(dataset_path) / "meta/lerobot_framesamp.json").is_file():
+    if (Path(dataset_path) / "meta/percmem_v1.json").is_file():
+        from mme_vla_suite.training.lerobot_percmem import LeRobotPercMemDataset
+        dataset_class = LeRobotPercMemDataset
+    elif (Path(dataset_path) / "meta/lerobot_framesamp.json").is_file():
         from mme_vla_suite.training.lerobot_framesamp import LeRobotFrameSampDataset
         dataset_class = LeRobotFrameSampDataset
 

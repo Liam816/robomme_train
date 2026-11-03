@@ -1,0 +1,13 @@
+{
+  "total_parameters": 3386067729,
+  "p0_trainable_parameters": 2968692768,
+  "scorer_parameters": 2571265,
+  "reader_parameters": 22720000,
+  "input_adapter_parameters": 5245440,
+  "output_adapter_parameters": 2097152,
+  "validation": "abstract shapes only; no real pretrained forward or GPU allocation",
+  "base_metadata_compatible": true,
+  "missing_base_keys": [],
+  "unexpected_base_keys": [],
+  "shape_mismatches": []
+}

@@ -43,8 +43,17 @@ def create_trained_policy(
         )
     
 
+    resolved = checkpoint_dir.parent / "percmem_history.json"
+    is_percmem = resolved.is_file()
+    if is_percmem:
+        import json
+        from omegaconf import OmegaConf
+        history = OmegaConf.create(json.loads(resolved.read_text()))
+        train_config = dataclasses.replace(train_config, model=dataclasses.replace(
+            train_config.model, history_config=history, use_history=True))
     logging.info("Loading model...")
-    model = train_config.model.load(_model.restore_params(checkpoint_dir / "params", dtype=jnp.bfloat16))
+    # Preserve FP32 frozen A_feat/scorer parameters for identical offline/online decisions.
+    model = train_config.model.load(_model.restore_params(checkpoint_dir / "params", dtype=None if is_percmem else jnp.bfloat16))
     data_config = train_config.data.create(train_config.assets_dirs, train_config.model)
     
     if norm_stats is None:
@@ -55,7 +64,11 @@ def create_trained_policy(
     print("Training config: ", train_config)
     print("Data config: ", data_config)
 
-    return _policy.MME_VLA_Policy(
+    policy_class = _policy.MME_VLA_Policy
+    if is_percmem:
+        from mme_vla_suite.policies.percmem_policy import PercMemPolicy
+        policy_class = PercMemPolicy
+    return policy_class(
         model,
         seed=seed,
         transforms=[

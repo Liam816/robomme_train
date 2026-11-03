@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1110" viewBox="0 0 1800 1110">
+<title>pi0.5 perceptual memory v1 implemented student architecture</title>
+<desc>The original learned eviction scorer and Perceiver reader retain all specified internal dimensions. Only feature and conditioning adapters connect them to pi0.5. This is the implemented student path. The P0 full-history teacher bypasses bounded eviction. Training has not been launched.</desc>
+<defs><marker id="arrow" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><path d="M0 0 L9 3.5 L0 7 Z" fill="#53667f"/></marker><marker id="arrow-orange" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><path d="M0 0 L9 3.5 L0 7 Z" fill="#b47a29"/></marker></defs>
+<rect x="0" y="0" width="1800" height="1110" fill="#ffffff"/>
+<rect x="25" y="120" width="1750" height="350" rx="16" fill="#fafbfe" stroke="#dbe2ed"/>
+<rect x="25" y="505" width="1750" height="495" rx="16" fill="#fcfdfd" stroke="#dbe5e1"/>
+<rect x="50" y="170" width="250" height="120" rx="12" fill="#eff6ff" stroke="#91b7e8" stroke-width="1.5"/>
+<rect x="350" y="170" width="260" height="120" rx="12" fill="#eff6ff" stroke="#91b7e8" stroke-width="1.5"/>
+<rect x="660" y="170" width="360" height="120" rx="12" fill="#ecfdf8" stroke="#76b8a8" stroke-width="1.5"/>
+<rect x="1120" y="150" width="340" height="160" rx="12" fill="#f3efff" stroke="#ac97d8" stroke-width="1.5"/>
+<rect x="1510" y="180" width="240" height="105" rx="12" fill="#edf8ee" stroke="#8dbd91" stroke-width="1.5"/>
+<rect x="350" y="350" width="260" height="90" rx="12" fill="#f5f6f8" stroke="#bdc3ce" stroke-width="1.5"/>
+<rect x="660" y="350" width="360" height="90" rx="12" fill="#f3efff" stroke="#ac97d8" stroke-width="1.5"/>
+<rect x="1120" y="350" width="340" height="90" rx="12" fill="#fff7e9" stroke="#d7b06e" stroke-width="1.5"/>
+<rect x="50" y="550" width="250" height="120" rx="12" fill="#eff6ff" stroke="#91b7e8" stroke-width="1.5"/>
+<rect x="350" y="550" width="260" height="120" rx="12" fill="#eff6ff" stroke="#91b7e8" stroke-width="1.5"/>
+<rect x="660" y="550" width="360" height="120" rx="12" fill="#fff7e9" stroke="#d7b06e" stroke-width="1.5"/>
+<rect x="1120" y="540" width="340" height="150" rx="12" fill="#ecfdf8" stroke="#76b8a8" stroke-width="1.5"/>
+<rect x="350" y="805" width="330" height="150" rx="12" fill="#f3efff" stroke="#ac97d8" stroke-width="1.5"/>
+<rect x="1120" y="805" width="340" height="150" rx="12" fill="#f3efff" stroke="#ac97d8" stroke-width="1.5"/>
+<rect x="1510" y="810" width="240" height="140" rx="12" fill="#fff7e9" stroke="#d7b06e" stroke-width="1.5"/>
+<rect x="50" y="350" width="250" height="90" rx="12" fill="#eff6ff" stroke="#91b7e8" stroke-width="1.5"/>
+<rect x="1510" y="350" width="240" height="90" rx="12" fill="#edf8ee" stroke="#8dbd91" stroke-width="1.5"/>
+<polyline points="300,230 350,230" fill="none" stroke="#53667f" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="610,230 660,230" fill="none" stroke="#53667f" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="1020,230 1120,230" fill="none" stroke="#53667f" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="1460,230 1510,230" fill="none" stroke="#53667f" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="1020,395 1120,395" fill="none" stroke="#53667f" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="1290,350 1290,310" fill="none" stroke="#53667f" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="300,610 350,610" fill="none" stroke="#53667f" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="610,610 660,610" fill="none" stroke="#53667f" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="1020,610 1120,610" fill="none" stroke="#53667f" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="1290,690 1290,805" fill="none" stroke="#53667f" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="1460,880 1510,880" fill="none" stroke="#53667f" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="610,395 635,395 635,330 1060,330 1060,285 1120,285" fill="none" stroke="#53667f" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="1750,880 1770,880 1770,485 1480,485 1480,395 1460,395" fill="none" stroke="#b47a29" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arrow-orange)"/>
+<polyline points="1180,690 1180,750 515,750 515,805" fill="none" stroke="#53667f" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arrow)" stroke-dasharray="8 6"/>
+<polyline points="680,880 1080,880 1080,720 1230,720 1230,690" fill="none" stroke="#53667f" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arrow)" stroke-dasharray="8 6"/>
+<polyline points="300,395 325,395 325,310 700,310 700,290" fill="none" stroke="#53667f" stroke-width="2.4" marker-end="url(#arrow)"/>
+<polyline points="1630,285 1630,350" fill="none" stroke="#53667f" stroke-width="2.4" marker-end="url(#arrow)"/>
+<g font-family="Arial, Helvetica, sans-serif" fill="#203047">
+<text x="40" y="52" font-size="32" font-weight="700">pi0.5 + Perceptual Memory v1</text>
+<text x="40" y="86" font-size="20" fill="#5f6f82">Implemented student path · Original memory internals preserved · Verified against repository commit 827c865</text>
+<text x="45" y="145" font-size="16" fill="#697b91">PI0.5 BACKBONE — current-frame VLM; original action expert</text>
+<text x="45" y="530" font-size="16" fill="#627d73">PERCEPTUAL MEMORY — front only; fixed capacity; no task text by default</text>
+<text x="67" y="201" font-size="21" font-weight="700" fill="#173d70">Current observation</text>
+<text x="67" y="230" font-size="17" fill="#173d70">front + wrist</text>
+<text x="67" y="255" font-size="17" fill="#173d70">current RGB only</text>
+<text x="367" y="201" font-size="21" font-weight="700" fill="#173d70">Frozen SigLIP</text>
+<text x="367" y="230" font-size="17" fill="#173d70">current: 256 tokens / view</text>
+<text x="367" y="255" font-size="17" fill="#173d70">native width = 2048</text>
+<text x="677" y="201" font-size="21" font-weight="700" fill="#175a4e">VLM prefix / Gemma 2B</text>
+<text x="677" y="230" font-size="17" fill="#175a4e">current images + instruction only</text>
+<text x="677" y="255" font-size="17" fill="#175a4e">prefix KV cache shared across flow steps</text>
+<text x="1137" y="181" font-size="21" font-weight="700" fill="#51367d">Action expert / Gemma 300M</text>
+<text x="1137" y="210" font-size="17" fill="#51367d">18 layers, hidden = 1024</text>
+<text x="1137" y="235" font-size="17" fill="#51367d">adaRMS: attention + FFN + final norm</text>
+<text x="1527" y="211" font-size="21" font-weight="700" fill="#295e30">Predicted velocity</text>
+<text x="1527" y="240" font-size="17" fill="#295e30">[B, 20, 32]</text>
+<text x="1527" y="265" font-size="17" fill="#295e30">physical action: 8-d</text>
+<text x="367" y="381" font-size="21" font-weight="700" fill="#404c60">Noisy actions</text>
+<text x="367" y="410" font-size="17" fill="#404c60">[B, 20, 32] → projection</text>
+<text x="677" y="381" font-size="21" font-weight="700" fill="#51367d">Original time conditioning</text>
+<text x="677" y="410" font-size="17" fill="#51367d">sin/cos → time MLP → [B, 1024]</text>
+<text x="1137" y="381" font-size="21" font-weight="700" fill="#7a541a">Add memory to time condition</text>
+<text x="1137" y="410" font-size="17" fill="#7a541a">adarms_cond = time_cond + delta_cond</text>
+<text x="67" y="581" font-size="21" font-weight="700" fill="#173d70">Front keyframes</text>
+<text x="67" y="610" font-size="17" fill="#173d70">2 fps / stride = 10 logical ticks</text>
+<text x="67" y="635" font-size="17" fill="#173d70">demo: same write rule</text>
+<text x="367" y="581" font-size="21" font-weight="700" fill="#173d70">Frozen vision + mean pool</text>
+<text x="367" y="610" font-size="17" fill="#173d70">16×16 → 8×8</text>
+<text x="367" y="635" font-size="17" fill="#173d70">[B, 64, 2048]</text>
+<text x="677" y="581" font-size="21" font-weight="700" fill="#7a541a">A_feat / boundary adapter</text>
+<text x="677" y="610" font-size="17" fill="#7a541a">Linear 2048 → 2560</text>
+<text x="677" y="635" font-size="17" fill="#7a541a">freeze after P0; queue stores FP16</text>
+<text x="1137" y="571" font-size="21" font-weight="700" fill="#175a4e">Fixed-size visual bank</text>
+<text x="1137" y="600" font-size="17" fill="#175a4e">W = 4 recent frames (FIFO)</text>
+<text x="1137" y="625" font-size="17" fill="#175a4e">Q = 28 retained frames</text>
+<text x="1137" y="650" font-size="17" fill="#175a4e">32 × 64 × 2560; per-env state</text>
+<text x="367" y="836" font-size="21" font-weight="700" fill="#51367d">Original EvictScorer</text>
+<text x="367" y="865" font-size="17" fill="#51367d">256-d / 4 heads / 2 layers</text>
+<text x="367" y="890" font-size="17" fill="#51367d">scores Q + outgoing W candidate</text>
+<text x="367" y="915" font-size="17" fill="#51367d">retain high scores; evict argmin</text>
+<text x="1137" y="836" font-size="21" font-weight="700" fill="#51367d">Original MemReader</text>
+<text x="1137" y="865" font-size="17" fill="#51367d">32 × 16 = 512 read tokens</text>
+<text x="1137" y="890" font-size="17" fill="#51367d">8 queries / 512-d / 2 layers</text>
+<text x="1137" y="915" font-size="17" fill="#51367d">4096 → 2048 → 2048; zero final</text>
+<text x="1527" y="841" font-size="21" font-weight="700" fill="#7a541a">A_cond / adapter</text>
+<text x="1527" y="870" font-size="17" fill="#7a541a">Linear 2048 → 1024</text>
+<text x="1527" y="895" font-size="17" fill="#7a541a">nonzero init; no bias</text>
+<text x="1527" y="920" font-size="17" fill="#7a541a">read once per decision</text>
+<text x="575" y="739" font-size="16" fill="#697b91">candidate features</text>
+<text x="773" y="869" font-size="16" fill="#697b91">eviction decision</text>
+<text x="50" y="1034" font-size="19" font-weight="700">Clock adapter: 20 logical ticks/s; 10 ticks/keyframe = 2 fps.</text>
+<text x="50" y="1067" font-size="18" fill="#5f6f82">At the dataset’s declared 10 fps: one keyframe every 5 rows. Online control timing must be verified.</text>
+<text x="1100" y="1034" font-size="18" fill="#5f6f82">Solid: data / conditioning. Dashed: bank scoring interaction.</text>
+<text x="1100" y="1067" font-size="18" fill="#5f6f82">Orange: pi0.5 adapters. Purple: learned reader / decoder.</text>
+<text x="67" y="381" font-size="21" font-weight="700" fill="#173d70">Task instruction</text>
+<text x="67" y="410" font-size="17" fill="#173d70">input embeddings</text>
+<text x="1527" y="381" font-size="21" font-weight="700" fill="#295e30">Flow matching loss</text>
+<text x="1527" y="410" font-size="17" fill="#295e30">MSE(v, noise − action)</text>
+</g></svg>

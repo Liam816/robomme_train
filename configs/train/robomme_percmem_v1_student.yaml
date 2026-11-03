@@ -1,0 +1,104 @@
+# Server profile for review. No training starts unless --execute is supplied.
+# Matched reference: robomme_percmem_v1_student.yaml. P0 full-history v1 teacher.
+profile_name: robomme_percmem_v1_student
+base_config: mme_vla_suite
+
+runtime:
+  cuda_visible_devices: [0, 1, 2, 3]
+  xla_python_client_mem_fraction: 0.90
+  xla_python_client_preallocate: true
+  omp_num_threads: 8
+  openblas_num_threads: 1
+  openpi_data_home: /mnt/cpfs/heping/checkpoints
+  # Upstream main() hardcodes ~/.cache/jax_<exp_name>. The runner redirects
+  # that path to this CPFS directory using a new symlink only on --execute.
+  compilation_cache_dir: /mnt/cpfs/heping/projects/robomme_policy_learning/runs/jax_cache/percmem-v1-student-lerobot-s42
+
+data:
+  dataset_path: /mnt/cpfs/heping/data/public/robomme_percmem_v1_cache
+  repo_id: robomme
+  norm_assets_dir: /mnt/cpfs/heping/projects/robomme_policy_learning/runs/assets/mme_vla_suite
+  norm_asset_id: robomme
+  expected_episodes: 1600
+  expected_frames: 768897
+  expected_execution_samples: 476857
+
+weights:
+  # Required JAX/Orbax pi05 base, not a trained FrameSamp policy or safetensors.
+  params_path: /mnt/cpfs/heping/projects/robomme_policy_learning/runs/ckpts/mme_vla_suite/percmem-v1-teacher-lerobot-s42/79999/params
+
+model:
+  pi05: true
+  dtype: bfloat16
+  paligemma_variant: gemma_2b
+  action_expert_variant: gemma_300m
+  action_dim: 32             # model padding; physical action is 7 joints + gripper
+  action_horizon: 20
+  max_token_len: 64
+  discrete_state_input: false
+  use_history: true
+  history_config: perceptual-learned-adarms-v1-student.yaml
+
+# Assertions against the referenced, executable memory configuration.
+# They do not override the cache. Changing pooling requires regenerating features.
+expected_memory:
+  representation_type: perceptual
+  integration_type: perc_adarms
+  streaming_obs_horizon: 16
+  perc_mem:
+    stage: student
+    input_space: projected
+    feature_dim: 2560
+    output_dim: 2048
+    recent_frames: 4
+    queue_frames: 28
+    store_grid: 8
+    read_grid: 4
+    score_grid: 4
+    max_frames: 320
+    clock_hz: 20
+    key_stride: 10
+
+freeze: percmem_student          # frozen vision/VLM/A_feat/scorer; reader/A_cond/action trainable
+
+learning_rate:
+  schedule: warmup_then_constant
+  warmup_steps: 1000
+  value: 5.0e-6
+
+optimizer:
+  b1: 0.9
+  b2: 0.95
+  eps: 1.0e-8
+  weight_decay: 0.0          # paper Table 6; upstream default is 1e-10
+  clip_gradient_norm: 1.0
+
+train:
+  project_name: robomme-percmem-v1
+  exp_name: percmem-v1-student-lerobot-s42
+  seed: 42                  # repository default; paper does not specify train seed
+  batch_size: 64             # global batch; 16 samples per device on four GPUs
+  num_workers: 4
+  fsdp_devices: 4
+  num_train_steps: 8000
+  ema_decay: 0.999
+  log_interval: 100
+  save_interval: 1000
+  keep_period: 1000
+  assets_base_dir: /mnt/cpfs/heping/projects/robomme_policy_learning/runs/assets
+  checkpoint_base_dir: /mnt/cpfs/heping/projects/robomme_policy_learning/runs/ckpts
+  overwrite: false
+  resume: false
+  resum_ckpt_id: null
+  # Upstream has an author-specific W&B entity. Use local logs for this profile.
+  wandb_enabled: false
+
+# Review/evaluation plan, not parameters consumed by the training loop.
+evaluation:
+  tasks: 16
+  episodes_per_task: 50
+  max_episode_steps: 1300
+  execute_action_steps: 16
+  last_checkpoints: 3
+  # Planned evaluation seeds; the paper does not publish their exact values.
+  seeds: [7, 31, 42]

@@ -1,0 +1,43 @@
+# All unspecified v1 details are fixed here, not tuned separately per stage.
+representation_type: perceptual
+integration_type: perc_adarms
+streaming_obs_horizon: 16
+num_views: 1
+token_per_image: 16
+budget: 512
+use_state_emb: false
+perceptual_memory:
+  type: learned_eviction
+perc_mem:
+  native_dim: 2048
+  feature_dim: 2560
+  output_dim: 2048
+  store_grid: 8
+  read_grid: 4
+  score_grid: 4
+  clock_hz: 20
+  key_stride: 10
+  recent_frames: 4
+  queue_frames: 28
+  scorer_dim: 256
+  scorer_heads: 4
+  scorer_layers: 2
+  scorer_ffn: 1024
+  scorer_dropout: 0.1
+  scorer_use_instr: false
+  use_redund: true
+  reader_dim: 512
+  reader_queries: 8
+  reader_heads: 8
+  reader_layers: 2
+  reader_ffn: 2048
+  age_dim: 256
+  norm_eps: 1.0e-5
+  sinusoid_base: 10000.0
+  attention_bias: true
+  stage: teacher
+  evict: learned
+  max_frames: 320
+  input_space: native
+  memory_mode: normal
+  control_hz: null  # Serving requires timestamps or a verified control_hz.

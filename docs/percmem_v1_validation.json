@@ -1,0 +1,91 @@
+{
+  "percmem_tests": {
+    "exit_code": 0,
+    "seconds": 92.92,
+    "log": "/tmp/percmem_v1_percmem_tests.log"
+  },
+  "framesamp_regression": {
+    "exit_code": 0,
+    "seconds": 2.9,
+    "log": "/tmp/percmem_v1_framesamp_regression.log"
+  },
+  "teacher_profile": {
+    "exit_code": 0,
+    "seconds": 26.73,
+    "log": "/tmp/percmem_v1_teacher_profile.log"
+  },
+  "student_profile": {
+    "exit_code": 0,
+    "seconds": 20.63,
+    "log": "/tmp/percmem_v1_student_profile.log"
+  },
+  "verified_at": "2026-11-03T17:33:45+08:00",
+  "base_commit": "827c86535fb3383488574ea683552454886fc344",
+  "branch": "codex/pi05-perc-mem-v1",
+  "new_tests_passed": 21,
+  "baseline_tests_passed": 6,
+  "training_started": true,
+  "main_original_files_changed": [],
+  "hardware_capacity_tested": true,
+  "local_syntax_compile_passed": true,
+  "svg_and_markdown_links_passed": true,
+  "production_metadata_compatible": true,
+  "total_tests_passed": 27,
+  "cpu_precommit_tests": {
+    "exit_code": 0,
+    "seconds": 135.46,
+    "verified_at_utc": "2026-11-03T09:33:07+00:00",
+    "command": [
+      "/mnt/cpfs/heping/projects/robomme_policy_learning/.venv/bin/python",
+      "-m",
+      "unittest",
+      "test_percmem_v1",
+      "test_percmem_stages",
+      "test_lerobot_percmem",
+      "test_percmem_profiles",
+      "test_lerobot_framesamp",
+      "-v"
+    ],
+    "test_count": 27,
+    "log": "/tmp/percmem_precommit_tests.log"
+  },
+  "initial_review_snapshot": {
+    "percmem_tests": {
+      "exit_code": 0,
+      "seconds": 92.92,
+      "log": "/tmp/percmem_v1_percmem_tests.log"
+    },
+    "framesamp_regression": {
+      "exit_code": 0,
+      "seconds": 2.9,
+      "log": "/tmp/percmem_v1_framesamp_regression.log"
+    },
+    "teacher_profile": {
+      "exit_code": 0,
+      "seconds": 26.73,
+      "log": "/tmp/percmem_v1_teacher_profile.log"
+    },
+    "student_profile": {
+      "exit_code": 0,
+      "seconds": 20.63,
+      "log": "/tmp/percmem_v1_student_profile.log"
+    },
+    "verified_at": "2026-11-03T14:13:45+08:00",
+    "base_commit": "827c86535fb3383488574ea683552454886fc344",
+    "branch": "codex/pi05-perc-mem-v1",
+    "new_tests_passed": 20,
+    "baseline_tests_passed": 6,
+    "training_started": false,
+    "main_original_files_changed": [],
+    "hardware_capacity_tested": false,
+    "local_syntax_compile_passed": true,
+    "svg_and_markdown_links_passed": true,
+    "production_metadata_compatible": true
+  },
+  "production_verification": {
+    "scope": "short-run batch64, four-way FSDP; not a completed experiment",
+    "completed_iterations_at_check": 105,
+    "runtime_record": "percmem_v1_p0_run.json",
+    "gpu_synthetic_multistep_regression_passed": true
+  }
+}

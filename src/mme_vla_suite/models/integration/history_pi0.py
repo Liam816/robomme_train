@@ -90,6 +90,10 @@ class HistoryPi0Config(Pi0Config):
             # Create a new config with the loaded history config
             config_with_loaded_history = dataclasses.replace(self, history_config=loaded_config)
             
+            if loaded_config.integration_type == "perc_adarms":
+                from mme_vla_suite.models.integration.percmem_pi05 import PercMemPi05
+                return PercMemPi05(config_with_loaded_history, rngs=nnx.Rngs(rng))
+
             max_token_len = self.max_token_len
             if loaded_config.representation_type == "symbolic":
                 if loaded_config.symbolic_memory.type in ["simple_subgoal", "grounded_subgoal"]:
@@ -107,6 +111,11 @@ class HistoryPi0Config(Pi0Config):
 
     def inputs_spec(self, *, batch_size: int = 1) -> tuple[HistAugObservation, Actions]:
         base_obs_spec, action_spec = super().inputs_spec(batch_size=batch_size)
+        history = get_history_config(self.history_config)
+        if self.use_history and history is not None and history.integration_type == "perc_adarms":
+            from mme_vla_suite.models.integration.percmem_pi05 import inputs_spec
+            with at.disable_typechecking():
+                return inputs_spec(base_obs_spec, action_spec, history, batch_size)
         with at.disable_typechecking():
             if not self.use_history:
                 observation_spec = base_obs_spec  # basic pi0
@@ -202,6 +211,14 @@ class HistoryPi0Config(Pi0Config):
 
     def get_freeze_filter(self) -> nnx.filterlib.Filter:
         """Returns the freeze filter based on the model config."""
+        history = get_history_config(self.history_config)
+        if history is not None and history.integration_type == "perc_adarms":
+            from mme_vla_suite.models.representation.perc_memory_v1 import PercMemConfig
+            cfg = PercMemConfig.from_history(history)
+            if cfg.stage == "student":
+                trainable = nnx_utils.PathRegex("(mem_reader/.*|mem_cond_adapter/.*|.*llm.*_1.*|time_mlp_.*|action_.*)")
+                return nnx.Not(trainable)
+            return nnx.Any(nnx_utils.PathRegex(".*img.*"), nnx_utils.PathRegex("mem_scorer/.*"))
         filters = []
         has_lora = False
         gemma_params_filter = nnx_utils.PathRegex(".*llm.*")

@@ -94,6 +94,10 @@ def init_history_config(config: _config.TrainConfig):
     if config.model.history_config is not None:
         with open(config.checkpoint_dir / "history_config.txt", "w") as f:
             f.write(config.model.history_config)
+    history = get_history_config(config.model.history_config)
+    if history is not None and history.integration_type == "perc_adarms":
+        from mme_vla_suite.training.percmem_profile import save_run_metadata
+        save_run_metadata(config)
 
 def _load_weights_and_validate(
     loader: _weight_loaders.WeightLoader, params_shape: at.Params
@@ -151,9 +155,13 @@ def init_train_state(
 
         params = nnx.state(model)
         # Convert frozen params to bfloat16.
+        frozen_cast_filter = config.freeze_filter
+        if getattr(model, "integration_type", None) == "perc_adarms":
+            # P2/P3 scorers and A_feat retain their exported FP32 precision.
+            frozen_cast_filter = nnx.All(config.freeze_filter, nnx_utils.PathRegex("PaliGemma/img/.*"))
         params = nnx_utils.state_map(
             params,
-            config.freeze_filter,
+            frozen_cast_filter,
             lambda p: p.replace(p.value.astype(jnp.bfloat16)),
         )
 
@@ -214,11 +222,15 @@ def train_step(
     rng: at.KeyArrayLike,
     state: training_utils.TrainState,
     batch: tuple[HistAugObservation, _model.Actions],
+    frozen_teacher_params: Any = None,
 ) -> tuple[
     training_utils.TrainState, dict[str, at.Array], Any
 ]:
     model = nnx.merge(state.model_def, state.params)
     model.train()
+    teacher = None if frozen_teacher_params is None else nnx.merge(state.model_def, frozen_teacher_params)
+    if teacher is not None:
+        teacher.eval()
 
     @at.typecheck
     def loss_fn(
@@ -227,6 +239,9 @@ def train_step(
         observation: HistAugObservation,
         actions: _model.Actions,
     ):
+        if teacher is not None:
+            from mme_vla_suite.models.integration.percmem_pi05 import distillation_loss
+            return distillation_loss(model, teacher, rng, observation, actions, train=True)
         chunked_loss, stats = model.compute_loss(rng, observation, actions, train=True)
         return jnp.mean(chunked_loss), stats
 
@@ -261,6 +276,14 @@ def train_step(
             ),
         )
 
+    if state.ema_decay is not None and getattr(model, "integration_type", None) == "perc_adarms":
+        # Frozen BF16 weights must not drift through EMA arithmetic: history caches and P3
+        # shared-prefix/scorer artifacts rely on bitwise-stable frozen parameters.
+        trainable_paths = set(params.flat_state())
+        current = new_params.flat_state()
+        new_state = dataclasses.replace(new_state, ema_params=new_state.ema_params.map(
+            lambda path, value: value if path in trainable_paths else current[path]))
+
     # Filter out params that aren't kernels.
     kernel_params = nnx.state(
         model,
@@ -282,7 +305,57 @@ def train_step(
     if config.model.use_history and hasattr(grads, "mem_encoder"):
         info["mem_enc_norm"] = optax.global_norm(grads.mem_encoder)
 
+    if teacher is not None:
+        info.update(stats)
     return new_state, info, stats
+
+
+def compile_train_step(config, state_sharding, data_sharding, replicated_sharding, *, with_teacher=False):
+    teacher_sharding = state_sharding.params if with_teacher else None
+    history = get_history_config(config.model.history_config)
+    if history is None or history.integration_type != "perc_adarms":
+        return jax.jit(
+            functools.partial(train_step, config),
+            in_shardings=(replicated_sharding, state_sharding, data_sharding, teacher_sharding),
+            out_shardings=(state_sharding, replicated_sharding, replicated_sharding),
+            donate_argnums=(1,),
+        )
+
+    def compact(state):
+        return dataclasses.replace(
+            state, params=state.params.filter(config.trainable_filter),
+            ema_params=None if state.ema_params is None else state.ema_params.filter(config.trainable_filter),
+        )
+
+    def expand(state, frozen):
+        return dataclasses.replace(
+            state, params=nnx.State.merge(state.params, frozen),
+            ema_params=None if state.ema_params is None else nnx.State.merge(state.ema_params, frozen),
+        )
+
+    def update(rng, state, frozen, batch, teacher):
+        result, info, stats = train_step(config, rng, expand(state, frozen), batch, teacher)
+        return compact(result), info, stats
+
+    # This tree contains NamedSharding placeholders rather than runtime arrays.
+    with at.disable_typechecking():
+        compact_sharding = compact(state_sharding)
+    compiled = jax.jit(
+        update,
+        in_shardings=(replicated_sharding, compact_sharding,
+                      state_sharding.params.filter(config.freeze_filter), data_sharding, teacher_sharding),
+        out_shardings=(compact_sharding, replicated_sharding, replicated_sharding),
+        donate_argnums=(1,),
+    )
+
+    def run(rng, state, batch, teacher):
+        # Frozen parameters also supply the exact frozen EMA values. Keep them
+        # outside the donated tree: donating both aliases can double-free on GPU.
+        frozen = state.params.filter(config.freeze_filter)
+        result, info, stats = compiled(rng, compact(state), frozen, batch, teacher)
+        return expand(result, frozen), info, stats
+
+    return run
 
 
 def get_stats(stats_dict) -> dict[str, at.Array]:
@@ -338,11 +411,14 @@ def main(config: _config.TrainConfig, tentative_run: bool = False):
     replicated_sharding = jax.sharding.NamedSharding(
         mesh, jax.sharding.PartitionSpec())
 
+    selected_history = get_history_config(config.model.history_config)
+    percmem_enabled = selected_history is not None and selected_history.integration_type == "perc_adarms"
     checkpoint_manager, resuming = _checkpoints.initialize_checkpoint_dir(
         config.checkpoint_dir,
         keep_period=config.keep_period,
         overwrite=config.overwrite,
         resume=config.resume,
+        save_train_state=percmem_enabled,
     )
     init_wandb(config, resuming=resuming, enabled=config.wandb_enabled)
     init_history_config(config)
@@ -393,11 +469,14 @@ def main(config: _config.TrainConfig, tentative_run: bool = False):
         f"Initialized train state:\n{training_utils.array_tree_to_info(train_state.params.filter(nnx.All(nnx.Param)))}"
     )
 
-    ptrain_step = jax.jit(
-        functools.partial(train_step, config),
-        in_shardings=(replicated_sharding, train_state_sharding, data_sharding),
-        out_shardings=(train_state_sharding, replicated_sharding, replicated_sharding),
-        donate_argnums=(1,),
+    frozen_teacher_params = None
+    if percmem_enabled:
+        from mme_vla_suite.training.percmem_profile import load_frozen_teacher
+        frozen_teacher_params = load_frozen_teacher(config, train_state, train_state_sharding.params)
+
+    ptrain_step = compile_train_step(
+        config, train_state_sharding, data_sharding, replicated_sharding,
+        with_teacher=frozen_teacher_params is not None,
     )
 
     start_step = int(train_state.step)
@@ -418,7 +497,7 @@ def main(config: _config.TrainConfig, tentative_run: bool = False):
     infos = []
     for step in pbar:
         with sharding.set_mesh(mesh):
-            train_state, info, stats = ptrain_step(train_rng, train_state, batch)
+            train_state, info, stats = ptrain_step(train_rng, train_state, batch, frozen_teacher_params)
         infos.append(info)
         if step % config.log_interval == 0:
             stacked_infos = common_utils.stack_forest(infos)
@@ -447,7 +526,7 @@ def main(config: _config.TrainConfig, tentative_run: bool = False):
         if (
             step % config.save_interval == 0 and step > start_step
         ) or step == config.num_train_steps - 1:
-            _checkpoints.save_state(checkpoint_manager, train_state, data_loader, step)
+            _checkpoints.save_state(checkpoint_manager, train_state, data_loader, step, save_train_state=percmem_enabled)
 
     logging.info("Waiting for checkpoint manager to finish")
     checkpoint_manager.wait_until_finished()

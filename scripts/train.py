@@ -304,6 +304,10 @@ def train_step(
     }
     if config.model.use_history and hasattr(grads, "mem_encoder"):
         info["mem_enc_norm"] = optax.global_norm(grads.mem_encoder)
+    if getattr(getattr(model, "memory_cfg", None), "stage", None) == "e2e":
+        info["scorer_grad_norm"] = optax.global_norm(grads.mem_scorer)
+        info["reader_grad_norm"] = optax.global_norm(grads.mem_reader)
+        info["feature_adapter_grad_norm"] = optax.global_norm(grads.mem_feature_adapter)
 
     if teacher is not None:
         info.update(stats)

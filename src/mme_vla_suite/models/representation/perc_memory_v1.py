@@ -47,10 +47,15 @@ class PercMemConfig:
     teacher_params: str | None = None
     distill_weight: float = 1.0
     control_hz: float | None = None
+    e2e_temperature: float = 1.0
 
     def __post_init__(self):
-        if self.stage not in {"teacher", "student"}:
-            raise ValueError("stage must be teacher or student")
+        if self.stage not in {"teacher", "student", "e2e"}:
+            raise ValueError("stage must be teacher, student or e2e")
+        if not math.isfinite(self.e2e_temperature) or self.e2e_temperature <= 0:
+            raise ValueError("e2e_temperature must be finite and positive")
+        if self.stage == "e2e" and (self.evict != "learned" or self.scorer_use_instr):
+            raise ValueError("E2E uses learned visual-only eviction")
         if self.input_space not in {"native", "projected"}:
             raise ValueError("input_space must be native or projected")
         if self.memory_mode not in {"normal", "zero", "shuffle"}:
@@ -177,13 +182,22 @@ class EvictScorer(nnx.Module):
             self.instruction = nnx.Linear(cfg.feature_dim, cfg.scorer_dim, rngs=rngs)
 
     def __call__(self, feats, ticks, valid, now, is_new, *, instruction=None, deterministic=True, rng=None):
+        return self.score_frames(self.encode_frames(feats), ticks, valid, now, is_new,
+                                 instruction=instruction, deterministic=deterministic, rng=rng)
+
+    def encode_frames(self, feats):
+        """The unchanged frame-local encoder, shared across chronological writes."""
         cfg = self.cfg
         b, n = feats.shape[:2]
         x = self.proj(self.norm_input(pool_tokens(feats, cfg.score_grid)))
         x = x.reshape(b * n, cfg.score_grid ** 2, cfg.scorer_dim)
         query = jnp.broadcast_to(self.query.value, (b * n, 1, cfg.scorer_dim))
         f, _ = self.pool_attn(query, x, jnp.ones(x.shape[:2], bool))
-        f = f.reshape(b, n, cfg.scorer_dim)
+        return f.reshape(b, n, cfg.scorer_dim)
+
+    def score_frames(self, f, ticks, valid, now, is_new, *, instruction=None, deterministic=True, rng=None):
+        cfg = self.cfg
+        b, n = f.shape[:2]
         age = (now[:, None] - ticks) / cfg.clock_hz
         x = f + self.age(sinusoid(age, cfg.age_dim, cfg.sinusoid_base)) + self.is_new(is_new.astype(jnp.int32))
         if cfg.use_redund:

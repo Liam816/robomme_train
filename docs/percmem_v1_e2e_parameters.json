@@ -1,0 +1,12 @@
+{
+  "teacher": {
+    "total_parameters": 3386067729,
+    "trainable_parameters": 2968692768,
+    "parameter_structure_sha256": "6d725d684b8647d0dc419953274b0b3cfeb129a1808711f930a24a97ca034cd0"
+  },
+  "e2e": {
+    "total_parameters": 3386067729,
+    "trainable_parameters": 2971264033,
+    "parameter_structure_sha256": "6d725d684b8647d0dc419953274b0b3cfeb129a1808711f930a24a97ca034cd0"
+  }
+}

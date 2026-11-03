@@ -49,6 +49,10 @@ def create_trained_policy(
         import json
         from omegaconf import OmegaConf
         history = OmegaConf.create(json.loads(resolved.read_text()))
+        if history.perc_mem.stage == "e2e":
+            # Training replays native history to differentiate writes. Deployment
+            # uses the same hard writer online and stores only projected FP16 W/Q.
+            history.perc_mem.input_space = "projected"
         train_config = dataclasses.replace(train_config, model=dataclasses.replace(
             train_config.model, history_config=history, use_history=True))
     logging.info("Loading model...")

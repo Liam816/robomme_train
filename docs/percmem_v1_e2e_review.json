@@ -1,0 +1,176 @@
+{
+  "profile_name": "robomme_percmem_v1_e2e_repro",
+  "mode": "configuration_review_only",
+  "training_started": false,
+  "model": {
+    "action_dim": 32,
+    "action_horizon": 20,
+    "max_token_len": 64,
+    "dtype": "bfloat16",
+    "paligemma_variant": "gemma_2b",
+    "action_expert_variant": "gemma_300m",
+    "pi05": true,
+    "discrete_state_input": false,
+    "memory_expert_variant": "gemma_150m",
+    "use_history": true,
+    "history_config": "perceptual-learned-adarms-v1-e2e.yaml"
+  },
+  "memory": {
+    "representation_type": "perceptual",
+    "integration_type": "perc_adarms",
+    "streaming_obs_horizon": 16,
+    "num_views": 1,
+    "token_per_image": 16,
+    "budget": 512,
+    "use_state_emb": false,
+    "perceptual_memory": {
+      "type": "learned_eviction"
+    },
+    "perc_mem": {
+      "native_dim": 2048,
+      "feature_dim": 2560,
+      "output_dim": 2048,
+      "store_grid": 8,
+      "read_grid": 4,
+      "score_grid": 4,
+      "clock_hz": 20,
+      "key_stride": 10,
+      "recent_frames": 4,
+      "queue_frames": 28,
+      "scorer_dim": 256,
+      "scorer_heads": 4,
+      "scorer_layers": 2,
+      "scorer_ffn": 1024,
+      "scorer_dropout": 0.1,
+      "scorer_use_instr": false,
+      "use_redund": true,
+      "reader_dim": 512,
+      "reader_queries": 8,
+      "reader_heads": 8,
+      "reader_layers": 2,
+      "reader_ffn": 2048,
+      "age_dim": 256,
+      "norm_eps": 1e-05,
+      "sinusoid_base": 10000.0,
+      "attention_bias": true,
+      "stage": "e2e",
+      "evict": "learned",
+      "e2e_temperature": 1.0,
+      "max_frames": 320,
+      "input_space": "native",
+      "memory_mode": "normal",
+      "control_hz": null
+    }
+  },
+  "train": {
+    "project_name": "robomme-percmem-v1",
+    "exp_name": "percmem-v1-e2e-lerobot-s42",
+    "seed": 42,
+    "batch_size": 64,
+    "num_workers": 4,
+    "fsdp_devices": 4,
+    "num_train_steps": 80000,
+    "ema_decay": 0.999,
+    "log_interval": 100,
+    "save_interval": 10000,
+    "keep_period": 10000,
+    "assets_base_dir": "/mnt/cpfs/heping/projects/robomme_policy_learning/runs/assets",
+    "checkpoint_base_dir": "/mnt/cpfs/heping/projects/robomme_policy_learning/runs/ckpts",
+    "overwrite": false,
+    "resume": false,
+    "resum_ckpt_id": null,
+    "wandb_enabled": false
+  },
+  "optimizer": {
+    "b1": 0.9,
+    "b2": 0.95,
+    "eps": 1e-08,
+    "weight_decay": 0.0,
+    "clip_gradient_norm": 1.0
+  },
+  "learning_rate": {
+    "warmup_steps": 10000,
+    "peak_lr": 5e-05,
+    "decay_steps": 80000,
+    "decay_lr": 5e-05
+  },
+  "learning_rate_samples": {
+    "0": 4.998582880944014e-09,
+    "10000": 4.999999873689376e-05,
+    "79999": 4.999999873689376e-05
+  },
+  "checkpoint_dir": "/mnt/cpfs/heping/projects/robomme_policy_learning/runs/ckpts/mme_vla_suite/percmem-v1-e2e-lerobot-s42",
+  "checkpoint_ids": [
+    10000,
+    20000,
+    30000,
+    40000,
+    50000,
+    60000,
+    70000,
+    79999
+  ],
+  "checks": {
+    "initial_params": {
+      "path": "/mnt/cpfs/heping/checkpoints/openpi-assets/checkpoints/pi05_base/params",
+      "present": true
+    },
+    "native_cache_manifest": {
+      "path": "/mnt/cpfs/heping/data/public/robomme_percmem_v1_cache/meta/percmem_v1.json",
+      "present": true
+    },
+    "native_cache_complete": {
+      "path": "/mnt/cpfs/heping/data/public/robomme_percmem_v1_cache/meta/native_complete.json",
+      "present": true
+    },
+    "normalization": {
+      "path": "/mnt/cpfs/heping/projects/robomme_policy_learning/runs/assets/mme_vla_suite/robomme/norm_stats.json",
+      "present": true
+    }
+  },
+  "execution_blockers": [],
+  "runtime": {
+    "cuda_visible_devices": [
+      4,
+      5,
+      6,
+      7
+    ],
+    "xla_python_client_mem_fraction": 0.9,
+    "xla_python_client_preallocate": true,
+    "omp_num_threads": 8,
+    "openblas_num_threads": 1,
+    "openpi_data_home": "/mnt/cpfs/heping/checkpoints",
+    "compilation_cache_dir": "/mnt/cpfs/heping/projects/robomme_policy_learning/runs/jax_cache/percmem-v1-e2e-lerobot-s42"
+  },
+  "global_batch_size": 64,
+  "samples_per_device": 16,
+  "input_memory_bytes_per_batch": 5368709120,
+  "capacity_tested": false,
+  "freeze": "vision only; VLM/action/scorer/reader/adapters trainable",
+  "memory_training": {
+    "selection": "hard_argmin_forward_softmax_ST_backward",
+    "temperature": 1.0,
+    "reader_capacity_frames": 32,
+    "history_gradient": "full_unroll_no_truncation",
+    "offline_bank_membership": false,
+    "scorer_decision_dropout": false
+  },
+  "compilation_cache_binding": {
+    "upstream_path": "/root/.cache/jax_percmem-v1-e2e-lerobot-s42",
+    "symlink_target": "/mnt/cpfs/heping/projects/robomme_policy_learning/runs/jax_cache/percmem-v1-e2e-lerobot-s42"
+  },
+  "evaluation_plan": {
+    "tasks": 16,
+    "episodes_per_task": 50,
+    "max_episode_steps": 1300,
+    "execute_action_steps": 16,
+    "last_checkpoints": 3,
+    "seeds": [
+      7,
+      31,
+      42
+    ]
+  },
+  "execution_requested": false
+}

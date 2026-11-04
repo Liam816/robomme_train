@@ -1,6 +1,10 @@
-"""Four-card MUSA P0 training: same model, transforms, global batch, loss and optimizer."""
+"""Four-card MUSA training with FP16-intermediate backward loss scaling.
+
+Forward/storage, FM loss, global batch, clipping, AdamW and EMA are unchanged.
+SIGUSR1 or checkpoint_and_stop.request saves at an optimizer-update boundary.
+"""
 from __future__ import annotations
-import argparse,contextlib,hashlib,json,os,time
+import argparse,contextlib,hashlib,json,os,time,signal
 from datetime import datetime
 from pathlib import Path
 os.environ["JAX_PLATFORMS"]="cpu"
@@ -12,6 +16,7 @@ import yaml
 from mme_vla_suite.musa.model import PercMemPi05Torch
 from mme_vla_suite.musa.prepare_assets import load_tree
 from mme_vla_suite.musa.runtime import load_profile
+from mme_vla_suite.musa.numerics import loss_scale,unscale_gradients,resume_profiles_compatible
 from mme_vla_suite.musa.data import TrainingDataset,GlobalBatchSampler,collate,global_random,prepare_batch,validate_global_sampler
 
 def atomic(path,value):
@@ -77,7 +82,8 @@ def save_checkpoint(model,optimizer,ema,path,step,profile,frozen_hashes):
         frozen={n:p.detach().cpu() for n,p in model.named_parameters() if not p.requires_grad}
         torch.save(frozen,path/"frozen.pt")
         atomic(path/"metadata.json",{"format":state["format"],"step":step,"world_size":4,
-              "frozen_hashes":frozen_hashes,"wrapping":"each Gemma block plus root, use_orig_params=True; vision/scorer ignored",
+              "frozen_hashes":frozen_hashes,"wrapping":"each Gemma block plus root, use_orig_params=True; frozen modules ignored",
+              "backward_numerics":{"gradient_loss_scale":loss_scale(profile),"unscale_before_clipping_and_optimizer":True},
               "profile":profile,"resume_scope":"same world size, parameter ordering and wrapper layout; original global-batch sampler"})
     dist.barrier()
     if rank==0:atomic(path/"complete.json",{"step":step,"files":[f"rank{i}.pt" for i in range(4)]+["frozen.pt","metadata.json"]})
@@ -101,7 +107,10 @@ def main():
     parser.add_argument("--run-name")
     parser.add_argument("--resume-from",type=Path)
     args=parser.parse_args()
+    pause_requested=[False]
+    signal.signal(signal.SIGUSR1,lambda *_:pause_requested.__setitem__(0,True))
     profile=load_profile(args.config);check_profile(profile)
+    gradient_scale=loss_scale(profile)
     rank=int(os.environ["LOCAL_RANK"])
     allowed=os.sched_getaffinity(0)
     affinity=sorted(set(map(int,os.environ["ROBOMME_CPU_POOL"].split(",")))&allowed) if os.environ.get("ROBOMME_CPU_POOL") else sorted(allowed)
@@ -122,8 +131,8 @@ def main():
     if args.resume_from:
         if not (args.resume_from/"complete.json").exists():raise ValueError("Checkpoint is incomplete")
         saved_meta=json.loads((args.resume_from/"metadata.json").read_text())
-        if saved_meta["world_size"]!=4 or saved_meta["profile"]!=profile:
-            raise ValueError("Resume requires the same profile and four-rank wrapper layout")
+        if saved_meta["world_size"]!=4 or not resume_profiles_compatible(saved_meta["profile"],profile):
+            raise ValueError("Resume requires the same experiment/assets and four-rank layout; only micro/accumulation and backward loss scaling may vary")
     stamp=[args.run_name or datetime.now().strftime("smoke_%Y%m%d_%H%M%S") if rank==0 else None]
     dist.broadcast_object_list(stamp,src=0,device=device)
     run=Path(profile["train"]["checkpoint_base_dir"])/profile["train"]["exp_name"]/stamp[0]
@@ -191,8 +200,9 @@ def main():
             with sync:
                 loss=model(batch,draw,flow)
                 if not torch.isfinite(loss):raise FloatingPointError("Non-finite loss")
-                (loss/accum).backward()
+                (loss/accum*gradient_scale).backward()
             loss_total+=loss.detach()/accum
+        unscale_gradients(model,gradient_scale)
         grad_norm,scorer_grad,reader_grad,feature_grad=exact_grad_norm(model,device,profile["optimizer"]["clip_gradient_norm"])
         optimizer.step()
         with torch.no_grad():
@@ -200,12 +210,13 @@ def main():
             for name,p in model.named_parameters():
                 if p.requires_grad:ema[name].mul_(decay).add_(p.detach(),alpha=1-decay)
         dist.all_reduce(loss_total);loss_total/=4
-        delta=torch.zeros((2,),device=device)
+        delta=torch.zeros((3,),device=device)
+        if pause_requested[0] or (rank==0 and (run/'checkpoint_and_stop.request').exists()):delta[2]=1
         for n,p in model.named_parameters():
             if n in selected:delta[0]+=(p.detach()-selected[n]).square().sum()
             if n in scorer_initial:delta[1]+=(p.detach()-scorer_initial[n]).square().sum()
         dist.all_reduce(delta)
-        record={"step":step+1,"loss":float(loss_total.cpu()),"grad_norm":grad_norm,"learning_rate":lr,
+        record={"step":step+1,"loss":float(loss_total.cpu()),"grad_norm":grad_norm,"learning_rate":lr,"gradient_loss_scale":gradient_scale,
                 "reader_final_parameter_delta_l2":float(delta[0].sqrt().cpu()),"seconds":time.monotonic()-started}
         if is_e2e:record.update(scorer_grad_norm=scorer_grad,reader_grad_norm=reader_grad,feature_adapter_grad_norm=feature_grad,
                               scorer_parameter_delta_l2=float(delta[1].sqrt().cpu()))
@@ -214,13 +225,29 @@ def main():
             print(json.dumps(record),flush=True)
             with (run/'metrics.jsonl').open('a') as log:log.write(json.dumps(record)+'\n')
             atomic(run/"status.json",{"stage":"training","steps":step+1,"target_steps":start_step+args.steps,"total_parameters":total,
-                   "trainable_parameters":trainable,"records":records[-20:],"physical_gpus":[4,5,6,7]})
+                   "trainable_parameters":trainable,"records":records[-20:],"physical_gpus":[4,5,6,7],
+                   "rank0_pid":os.getpid(),"start_step":start_step,"micro_batch_per_rank":micro,"accumulation":accum})
+        if bool(delta[2].item()):
+            checkpoint_path=run/f"step_{step+1:06d}"
+            save_checkpoint(model,optimizer,ema,checkpoint_path,step+1,profile,frozen)
+            if rank==0:
+                after={"vision":module_hash(model.module.vision)}
+                if not is_e2e:after['scorer']=module_hash(model.module.memory.scorer)
+                if frozen!=after:raise AssertionError("Frozen weights changed")
+                atomic(run/'status.json',{"stage":"paused","steps":step+1,"start_step":start_step,
+                       "target_steps":start_step+args.steps,"checkpoint":str(checkpoint_path),
+                       "checkpoint_complete":True,"frozen_hashes_unchanged":True,"records":records[-20:],
+                       "physical_gpus":[4,5,6,7],"micro_batch_per_rank":micro,"accumulation":accum,
+                       "gradient_loss_scale":gradient_scale})
+            dist.barrier();del iterator,loader
+            dist.destroy_process_group();return
         # Match the upstream zero-based save trigger. Directory names count
         # completed optimizer updates, preventing an off-by-one resume schedule.
         if step>start_step and step%profile["train"]["save_interval"]==0 and step+1<start_step+args.steps:
             save_checkpoint(model,optimizer,ema,run/f"step_{step+1:06d}",step+1,profile,frozen)
     if records[-1]["reader_final_parameter_delta_l2"]<=0:raise AssertionError("Reader output parameters did not update")
-    # Original FP16 warmup can round tiny scorer gradients to zero; connectivity is separately validated against JAX.
+    # Forward keeps the original FP16 storage. Backward scaling prevents tiny
+    # reader gradients from rounding to zero before they reach scorer/A_feat.
     model.eval()
     with torch.no_grad():reference_loss=model(batch,draw,flow).detach().clone()
     end_step=start_step+args.steps
@@ -239,7 +266,7 @@ def main():
         result={"stage":"complete","steps":end_step,"invocation_updates":args.steps,"start_step":start_step,"records":records[-20:],"checkpoint":str(checkpoint_path),
                 "checkpoint_reload_fixed_input_identical":True,"frozen_hashes_unchanged":True,
                 "total_parameters":total,"trainable_parameters":trainable,"physical_gpus":[4,5,6,7],
-                "global_batch":64,"micro_batch_per_rank":micro,"accumulation":accum}
+                "global_batch":64,"micro_batch_per_rank":micro,"accumulation":accum,"gradient_loss_scale":gradient_scale}
         if is_e2e:result['scorer_gradient_observed']=any(r['scorer_grad_norm']>0 for r in records)
         atomic(run/"status.json",result);print(json.dumps(result),flush=True)
     dist.barrier();del iterator,loader

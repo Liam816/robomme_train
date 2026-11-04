@@ -15,7 +15,8 @@ musa:
   base_export: /data/heping/robomme_musa/assets/base_export
   memory_initial: /data/heping/robomme_musa/e2e/assets/memory_initial
   backend: mccl
-  micro_batch_size: 2
-  gradient_accumulation_steps: 8
+  micro_batch_size: 16
+  gradient_accumulation_steps: 1
   activation_checkpointing: true
   jax_preprocessing: cpu
+  gradient_loss_scale: 1048576

@@ -63,6 +63,12 @@ Then build the Docker image following [this](docs/docker_installation.md).
 
 ## ⚡ QuickStart
 ### Evaluation
+For the unified checkpoint/seed CLI used in this reproduction, see
+[Unified RoboMME evaluation](docs/UNIFIED_ROBOMME_EVALUATION.md).
+See also the [evaluation script usage and parameter reference](docs/EVAL_ROBOMME_SCRIPT.md).
+It supports resumable runs, per-checkpoint task tables, and the shared entry point
+`scripts/eval_robomme.py run --checkpoint /absolute/path/to/ckpt --seeds 0 42 7 --gpus 0 1 2 3 --runtime-config configs/eval/robomme_server.json --output-dir /absolute/path/to/new_run`.
+
 After installing everything correctly, download our best MME-VLA model (i.e., framesamp-modul) from Hugging Face.
 ```
 git clone https://huggingface.co/Yinpei/perceptual-framesamp-modul <your_specify_model_path>

@@ -1,0 +1,10 @@
+{
+  "model_python": ".venv/bin/python",
+  "sim_python": "/mnt/cpfs/heping/miniconda3/envs/simplememvla-robomme/bin/python",
+  "benchmark_dir": "/root/robomme-runtime/robomme_benchmark-856bc3a189d4172f3f47dbee4424d585f8d78db3",
+  "maniskill_dir": "/mnt/cpfs/heping/SimpleMemVLA/third_party/ManiSkill",
+  "asset_dir": "/mnt/cpfs/heping/SimpleMemVLA-data/assets/maniskill",
+  "graphics_dir": "/mnt/cpfs/heping/SimpleMemVLA-data/cache/graphics",
+  "work_dir": "/dev/shm/robomme_eval",
+  "openpi_data_home": "/mnt/cpfs/heping/checkpoints"
+}

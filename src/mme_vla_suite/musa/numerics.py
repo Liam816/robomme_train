@@ -25,6 +25,37 @@ def unscale_gradients(model, scale):
                 raise TypeError('This backend requires FP32 trainable master gradients')
             parameter.grad.div_(scale)
 
+
+def backward_with_backoff(model, backward, gradient_norms, scale, device, report=None):
+    """Retry the same batch and dropout draws before any optimizer/EMA update.
+
+    gradient_norms must reduce across ranks before rejecting a non-finite norm,
+    so every rank chooses the same scale. Scale only decreases, and stays >=1.
+    """
+    cpu_rng = torch.get_rng_state()
+    device_rng = torch.musa.get_rng_state(device) if device.type == 'musa' else None
+    retries = 0
+    while True:
+        model.zero_grad(set_to_none=True)
+        if retries:
+            torch.set_rng_state(cpu_rng)
+            if device_rng is not None:
+                torch.musa.set_rng_state(device_rng, device)
+        loss = backward(scale)
+        unscale_gradients(model, scale)
+        try:
+            norms = gradient_norms()
+        except FloatingPointError:
+            if scale <= 1:
+                raise
+            previous = scale
+            scale /= 2
+            retries += 1
+            if report is not None:
+                report(previous, scale, retries)
+        else:
+            return loss, norms, scale, retries
+
 def resume_profiles_compatible(saved, current):
     """Same experiment and assets; only batch splitting/numeric execution may vary."""
     saved, current = copy.deepcopy(saved), copy.deepcopy(current)

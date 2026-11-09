@@ -1,4 +1,4 @@
-"""Four-card MUSA training with FP16-intermediate backward loss scaling.
+"""Four-card MUSA training with FP16 backward scaling and overflow replay.
 
 Forward/storage, FM loss, global batch, clipping, AdamW and EMA are unchanged.
 SIGUSR1 or checkpoint_and_stop.request saves at an optimizer-update boundary.
@@ -16,7 +16,7 @@ import yaml
 from mme_vla_suite.musa.model import PercMemPi05Torch
 from mme_vla_suite.musa.prepare_assets import load_tree
 from mme_vla_suite.musa.runtime import load_profile
-from mme_vla_suite.musa.numerics import loss_scale,unscale_gradients,resume_profiles_compatible
+from mme_vla_suite.musa.numerics import loss_scale,backward_with_backoff,resume_profiles_compatible
 from mme_vla_suite.musa.data import TrainingDataset,GlobalBatchSampler,collate,global_random,prepare_batch,validate_global_sampler
 
 def atomic(path,value):
@@ -173,6 +173,10 @@ def main():
           eps=profile["optimizer"]["eps"],weight_decay=profile["optimizer"]["weight_decay"],foreach=False)
     ema={n:p.detach().clone() for n,p in model.named_parameters() if p.requires_grad}
     start_step=restore_local(model,optimizer,ema,args.resume_from) if args.resume_from else 0
+    if args.resume_from:
+        gradient_scale=min(gradient_scale,loss_scale(saved_meta["profile"]))
+        profile["musa"]["gradient_loss_scale"]=gradient_scale
+        if rank==0:atomic(run/"profile.json",profile)
     if args.steps is None:args.steps=profile['train']['num_train_steps']-start_step
     if start_step+args.steps>profile["train"]["num_train_steps"]:raise ValueError("Update budget exceeds the original training schedule")
     selected={n:p.detach().clone() for n,p in model.named_parameters() if p.requires_grad and "mem_reader__output_final__" in n}
@@ -185,25 +189,40 @@ def main():
     loader=torch.utils.data.DataLoader(dataset,batch_sampler=sampler,collate_fn=collate,num_workers=workers,**kwargs)
     iterator=iter(loader);records=[]
     model.train()
+    batch=draw=flow=None
     for step in range(start_step,start_step+args.steps):
         started=time.monotonic();optimizer.zero_grad(set_to_none=True)
         lr=lr_at(profile,step)
         for group in optimizer.param_groups:group["lr"]=lr
         keys,noise,times=global_random(profile["train"]["seed"],step,64)
-        loss_total=torch.zeros((),device=device)
-        for m in range(accum):
-            raw=next(iterator);begin=rank*16+m*micro;end=begin+micro
-            batch=prepare_batch(raw,keys[begin:end],device)
-            draw=torch.from_numpy(noise[begin:end].copy()).to(device)
-            flow=torch.from_numpy(times[begin:end].copy()).to(device)
-            sync=contextlib.nullcontext() if m==accum-1 else model.no_sync()
-            with sync:
-                loss=model(batch,draw,flow)
-                if not torch.isfinite(loss):raise FloatingPointError("Non-finite loss")
-                (loss/accum*gradient_scale).backward()
-            loss_total+=loss.detach()/accum
-        unscale_gradients(model,gradient_scale)
-        grad_norm,scorer_grad,reader_grad,feature_grad=exact_grad_norm(model,device,profile["optimizer"]["clip_gradient_norm"])
+        raw_batches=[next(iterator) for _ in range(accum)]
+        def backward(scale):
+            nonlocal batch,draw,flow
+            loss_total=torch.zeros((),device=device)
+            for m,raw in enumerate(raw_batches):
+                begin=rank*16+m*micro;end=begin+micro
+                batch=prepare_batch(raw,keys[begin:end],device)
+                draw=torch.from_numpy(noise[begin:end].copy()).to(device)
+                flow=torch.from_numpy(times[begin:end].copy()).to(device)
+                sync=contextlib.nullcontext() if m==accum-1 else model.no_sync()
+                with sync:
+                    loss=model(batch,draw,flow)
+                    if not torch.isfinite(loss):raise FloatingPointError("Non-finite loss")
+                    (loss/accum*scale).backward()
+                loss_total+=loss.detach()/accum
+            return loss_total
+        def report_backoff(previous,current,retries):
+            if rank==0:
+                event={"event":"loss_scale_backoff","step":step+1,"old_scale":previous,
+                       "new_scale":current,"retry":retries,"batch_and_rng_replayed":True}
+                print(json.dumps(event),flush=True)
+                with (run/'numerics.jsonl').open('a') as log:log.write(json.dumps(event)+'\n')
+        loss_total,norms,gradient_scale,scale_retries=backward_with_backoff(
+            model,backward,lambda:exact_grad_norm(model,device,profile["optimizer"]["clip_gradient_norm"]),
+            gradient_scale,device,report=report_backoff)
+        grad_norm,scorer_grad,reader_grad,feature_grad=norms
+        profile["musa"]["gradient_loss_scale"]=gradient_scale
+        if scale_retries and rank==0:atomic(run/"profile.json",profile)
         optimizer.step()
         with torch.no_grad():
             decay=profile["train"]["ema_decay"]
@@ -216,7 +235,7 @@ def main():
             if n in selected:delta[0]+=(p.detach()-selected[n]).square().sum()
             if n in scorer_initial:delta[1]+=(p.detach()-scorer_initial[n]).square().sum()
         dist.all_reduce(delta)
-        record={"step":step+1,"loss":float(loss_total.cpu()),"grad_norm":grad_norm,"learning_rate":lr,"gradient_loss_scale":gradient_scale,
+        record={"step":step+1,"loss":float(loss_total.cpu()),"grad_norm":grad_norm,"learning_rate":lr,"gradient_loss_scale":gradient_scale,"loss_scale_retries":scale_retries,
                 "reader_final_parameter_delta_l2":float(delta[0].sqrt().cpu()),"seconds":time.monotonic()-started}
         if is_e2e:record.update(scorer_grad_norm=scorer_grad,reader_grad_norm=reader_grad,feature_adapter_grad_norm=feature_grad,
                               scorer_parameter_delta_l2=float(delta[1].sqrt().cpu()))

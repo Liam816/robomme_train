@@ -1,0 +1,19 @@
+# All unmodified model, data, optimizer and training settings come from this baseline.
+# Relative to the RoboMME reference repository, including when the OpenPI launcher is used.
+reference_profile: configs/train/robomme_framesamp_modul_repro.yaml
+runtime:
+  cuda_visible_devices: [4, 5, 6, 7]
+train:
+  exp_name: framesamp-modul-openpi-pytorch-s42
+  checkpoint_base_dir: /mnt/cpfs-standard/heping/projects/robomme_base_repro/runs/ckpts
+  checkpoint_max_to_keep: 1
+# Seeds used in the completed 7,200-episode comparison (the earlier YAML recorded a proposed set).
+evaluation:
+  seeds: [0, 42, 7]
+pytorch:
+  activation_checkpointing: true
+  memory_init: /mnt/cpfs-standard/heping/projects/robomme_base_repro/assets/framesamp-modul-init-s42.npz
+  # A checkpoint contains inference EMA and normalization in the reference Orbax layout.
+  # As in the original YAML, the reproducibility run starts from base and does not resume.
+  benchmark_warmup: 16
+  benchmark_steps: 100

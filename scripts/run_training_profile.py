@@ -14,9 +14,13 @@ PROJECT = Path(__file__).resolve().parents[1]
 
 
 def configure_environment(runtime, execute):
-    if runtime["cuda_visible_devices"] != [0, 1, 2, 3]:
-        raise ValueError("This reviewed profile must use physical GPUs 0,1,2,3")
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
+    devices = runtime["cuda_visible_devices"]
+    if (not isinstance(devices, list) or len(devices) != 4
+            or any(type(device) is not int or device < 0 for device in devices)
+            or len(set(devices)) != 4):
+        raise ValueError("Expected exactly four distinct nonnegative physical GPU IDs")
+    os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+    os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, devices))
     os.environ["JAX_PLATFORMS"] = "cuda" if execute else "cpu"
     os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = str(runtime["xla_python_client_mem_fraction"])
     os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = str(runtime["xla_python_client_preallocate"]).lower()
@@ -119,6 +123,12 @@ def review_config(profile, config, memory):
     schedule = config.lr_schedule.create()
     saved_steps = [step for step in range(config.num_train_steps)
                    if (step > 0 and step % config.save_interval == 0) or step == config.num_train_steps - 1]
+    if config.checkpoint_max_to_keep < 1:
+        raise ValueError("checkpoint_max_to_keep must be positive")
+    if config.keep_period is not None and config.keep_period < 1:
+        raise ValueError("keep_period must be positive or null")
+    pinned_steps = [step for step in saved_steps if config.keep_period is not None and step % config.keep_period == 0]
+    retained_steps = sorted(set(saved_steps[-config.checkpoint_max_to_keep:]) | set(pinned_steps))
     return {
         "profile_name": profile["profile_name"], "mode": "configuration_review_only",
         "training_started": False, "runtime": profile["runtime"],
@@ -131,6 +141,9 @@ def review_config(profile, config, memory):
         "learning_rate": dataclasses.asdict(config.lr_schedule),
         "learning_rate_samples": {str(step): float(schedule(step)) for step in [0, 9999, 10000, 40000, 79999]},
         "checkpoint_dir": str(config.checkpoint_dir), "actual_checkpoint_ids": saved_steps,
+        "checkpoint_max_to_keep": config.checkpoint_max_to_keep,
+        "keep_period": config.keep_period, "retained_checkpoint_ids": retained_steps,
+        "total_training_samples": config.batch_size * config.num_train_steps,
         "evaluation_checkpoint_ids": saved_steps[-3:], "evaluation_plan": profile["evaluation"],
         "compilation_cache_binding": {"upstream_path": str(cache_link), "symlink_target": str(cache_target),
                                       "created_only_on_execute": True},
@@ -164,7 +177,7 @@ def main():
         raise SystemExit("Execution blocked:\n" + "\n".join(report["execution_blockers"]))
     import jax
     if len(jax.devices("gpu")) != 4:
-        raise RuntimeError("Expected exactly four visible CUDA devices mapped from physical GPUs 0-3")
+        raise RuntimeError(f"Expected exactly four visible CUDA devices from {profile['runtime']['cuda_visible_devices']}")
     binding = report["compilation_cache_binding"]
     target, link = Path(binding["symlink_target"]), Path(binding["upstream_path"])
     target.mkdir(parents=True, exist_ok=True)

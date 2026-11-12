@@ -505,6 +505,8 @@ class TrainConfig:
     log_interval: int = 100
     # How often (in steps) to save checkpoints.
     save_interval: int = 1000
+    # Retain this many most recent checkpoints, in addition to keep_period pins.
+    checkpoint_max_to_keep: int = 1
     # If set, any existing checkpoints matching step % keep_period == 0 will not be deleted.
     keep_period: int | None = 5000
 

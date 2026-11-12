@@ -1,7 +1,7 @@
 ---
 title: RoboMME FrameSamp+Modul：LeRobot 数据适配与训练链路交接
 created: 2026-11-03T11:31:00+08:00
-updated: 2026-11-08T12:28:13+08:00
+updated: 2026-11-12
 tags: [RoboMME, MME-VLA, LeRobot, FrameSamp, Modulation, JAX, 训练复现, 闭环评测]
 ---
 
@@ -416,7 +416,7 @@ CUDA_VISIBLE_DEVICES='' JAX_PLATFORMS=cpu \
 2. 放好原始 LeRobot 数据、完整缓存和两套权重；用固定 revision/哈希验证身份。迁移时处理缓存元信息内的原始绝对路径。
 3. 运行资产就位：`mkdir -p runs/assets/mme_vla_suite/robomme`，再将 `assets/norm_stats.json` 复制到该目录。保持作者统计量，不能混用其他项目 norm 文件。
 4. 缓存已迁移则直接验证使用；确实需要新建缓存且 GPU 空闲时，才运行 `bash scripts/prepare_lerobot_framesamp.sh`。该脚本会使用四张 GPU。
-5. 为新实验复制 YAML，更改实验名与编译缓存目录等部署路径，检查输出目录不存在。默认 runner 固定 GPU 0–3、四卡和 fresh-run 约束；换卡、续训等需要同时审阅 runner 的显式校验，不只是改 YAML。
+5. 为新实验复制 YAML，更改实验名与编译缓存目录等部署路径，检查输出目录不存在。原配置使用 GPU 0–3；runner 校验四个互不重复的物理 GPU ID，并按 YAML 绑定设备。新 batch-32 配置使用 GPU 4–7，仍要求四卡和 fresh-run；续训约束保持不变。
 6. 对新 YAML 先运行 CPU 解析和必要的数据检查，核对无意外 blocker。
 7. 确认要执行新 run 后，使用下面的后台模式，将输出写入该 run 独立日志；不要截断当前实验日志。
 
@@ -519,3 +519,13 @@ configs/train/robomme_framesamp_modul_repro.yaml
 | 九组平均 / 合计 | 三 checkpoint × 三 seed | 3152 / 7200 | **43.7778%** |
 
 与论文主表 44.51% 的差值是 **−0.7322 个百分点**。此处汇总来自实际记录复算，完整逐任务结果见旧 `REPORT.md`。
+
+
+## 13. Batch 减半对照（2026-11-12）
+
+- 独立配置：`configs/train/robomme_framesamp_modul_bs32.yaml`；入口：`scripts/train_framesamp_modul_bs32.sh`，默认只审阅，显式 `--execute` 才训练。完整说明见 [batch 减半对照](FRAMESAMP_MODUL_BS32_ABLATION.md)。
+- 新实验使用物理 GPU 4–7，全局 batch 64→32、每卡 16→8，保持 80,000 iter、seed42、模型、LR、optimizer、EMA 不变。累计处理样本从 512 万变为 256 万；速度与 SR 仍需实测。
+- 每 10,000 iter 保存，新增 `checkpoint_max_to_keep=3` 且 `keep_period=null`，最终只留 60000、70000、79999。79999 对应原编号规则的第 80,000 次更新。原配置默认的万步保护行为不变。
+- 新 checkpoint 根目录：`/mnt/cpfs-standard/heping/projects/robomme_policy_learning/runs/ckpts/mme_vla_suite/framesamp-modul-lerobot-bs32-s42`；编译缓存、归一化资产、tokenizer 缓存及审阅日志也在 cpfs-standard。既有 LeRobot 特征缓存和基座权重从原位置只读复用。
+- 后续评测计划与实际 batch-64 基线保持同样的 seeds `[0,42,7]` 与 test 16×50 场景。模型 checkpoint 以外的执行协议保持一致。
+- 已完成真实配置审阅；保留策略与 GPU 选择 CPU 检查共 7 项，原 YAML 未改动。新训练由用户授权后台启动，实时状态见 cpfs-standard 下本实验的 `train.log` 与 `launch_identity.json`，评测另行执行。原始复现提交中的 `run_training_profile.py` 哈希是历史记录，当前 runner 新增了保留列表和样本预算的审阅输出。

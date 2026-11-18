@@ -126,9 +126,11 @@ class VideoReader:
         self.containers.move_to_end(path)
         return self.containers[path]
 
-    def frames(self, episode, key="image", start=0, count=None):
-        count = episode["length"] - start if count is None else count
-        if start < 0 or count < 1 or start + count > episode["length"]:
+    def frames(self, episode, key="image", start=0, count=None, *, stride=1):
+        if stride < 1:
+            raise ValueError("Frame stride must be positive")
+        count = (episode["length"] - start + stride - 1) // stride if count is None else count
+        if start < 0 or count < 1 or start + (count - 1) * stride >= episode["length"]:
             raise ValueError("Requested frames cross episode boundaries")
         container = self._container(episode, key)
         stream = container.streams.video[0]
@@ -139,7 +141,7 @@ class VideoReader:
         tolerance = 0.45 / fps
         for frame in container.decode(stream):
             timestamp = float(frame.pts * stream.time_base)
-            expected = target + emitted / fps
+            expected = target + emitted * stride / fps
             if timestamp < expected - tolerance:
                 continue
             if abs(timestamp - expected) > tolerance:
